@@ -202,9 +202,16 @@ out-of-tree adapter; LeanProbe itself stays independent.
 
 Date: May 13, 2026.
 
-- macOS: Darwin 25.4.0, arm64, Python 3.12.12.
-- Linux: `larapc2`, Linux 6.8.0-111-generic, x86_64, Python 3.13.9.
 - Lean: `4.30.0-rc2` (`3dc1a088b6d2d8eafe25a7cd7ec7b58d731bd7cc`).
+
+Hardware matters more than the OS label for these timings, especially because
+full-file Lake checks and LeanInteract server startup are CPU and memory-cache
+sensitive.
+
+| Platform label | Machine | CPU / SoC | Cores / threads | Memory | Extra CPU details |
+| --- | --- | --- | ---: | ---: | --- |
+| macOS | MacBook Pro `Mac16,7` | Apple M4 Pro | 14 cores, no SMT reported; 10 performance + 4 efficiency | 24 GB unified memory | Darwin 25.4.0, arm64, Python 3.12.12 |
+| Linux `larapc2` | single-socket workstation | Intel Core i7-14700KF | 20 cores / 28 threads | 62 GiB RAM, 8 GiB swap | max 5.6 GHz, L2 28 MiB, L3 33 MiB, Linux 6.8.0-111-generic, Python 3.13.9 |
 
 Run policy: 1 measured run per target, 0 benchmark warmups, warm Lake caches from
 prior example validation, feedback enabled, no-cache baseline enabled. Prepare
