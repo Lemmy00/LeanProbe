@@ -1,0 +1,164 @@
+{
+  "cases": [
+    {
+      "label": "analysis_abs_sub",
+      "file_path": "lean/analysis_real.lean",
+      "theorem_id": "abs_sub_le_abs_add_abs",
+      "group": "analysis_real",
+      "size": "short",
+      "description": "Real absolute value triangle bound"
+    },
+    {
+      "label": "analysis_abs_reverse",
+      "file_path": "lean/analysis_real.lean",
+      "theorem_id": "abs_abs_sub_abs_le_abs_sub",
+      "group": "analysis_real",
+      "size": "short",
+      "description": "Reverse triangle inequality on Real"
+    },
+    {
+      "label": "analysis_dist_triangle",
+      "file_path": "lean/analysis_real.lean",
+      "theorem_id": "dist_triangle_real",
+      "group": "analysis_real",
+      "size": "medium",
+      "description": "Three-point absolute-distance triangle proof"
+    },
+    {
+      "label": "analysis_lipschitz_abs",
+      "file_path": "lean/analysis_real.lean",
+      "theorem_id": "lipschitz_abs_one",
+      "group": "analysis_real",
+      "size": "short",
+      "description": "Abs is 1-Lipschitz over Real"
+    },
+    {
+      "label": "analysis_continuous_square",
+      "file_path": "lean/analysis_real.lean",
+      "theorem_id": "continuous_shifted_square",
+      "group": "analysis_real",
+      "size": "medium",
+      "description": "Continuity proof using Mathlib automation"
+    },
+    {
+      "label": "algebra_sq_nonneg",
+      "file_path": "lean/algebra_order.lean",
+      "theorem_id": "sq_add_sq_nonneg",
+      "group": "algebra_order",
+      "size": "short",
+      "description": "Nonnegativity of sum of squares"
+    },
+    {
+      "label": "algebra_two_mul",
+      "file_path": "lean/algebra_order.lean",
+      "theorem_id": "two_mul_le_sq_add_sq",
+      "group": "algebra_order",
+      "size": "short",
+      "description": "Two-variable quadratic inequality"
+    },
+    {
+      "label": "algebra_sq_factor",
+      "file_path": "lean/algebra_order.lean",
+      "theorem_id": "sq_sub_sq_factor",
+      "group": "algebra_order",
+      "size": "short",
+      "description": "Difference of squares factorization"
+    },
+    {
+      "label": "algebra_cube_add",
+      "file_path": "lean/algebra_order.lean",
+      "theorem_id": "cube_add_expansion",
+      "group": "algebra_order",
+      "size": "medium",
+      "description": "Cubic polynomial expansion"
+    },
+    {
+      "label": "algebra_unit_square",
+      "file_path": "lean/algebra_order.lean",
+      "theorem_id": "square_le_self_on_unit_interval",
+      "group": "algebra_order",
+      "size": "medium",
+      "description": "Order inequality over the unit interval"
+    },
+    {
+      "label": "sets_preimage_inter",
+      "file_path": "lean/sets_functions.lean",
+      "theorem_id": "preimage_inter_eq",
+      "group": "sets_functions",
+      "size": "short",
+      "description": "Preimage distributes over intersection"
+    },
+    {
+      "label": "sets_preimage_subset",
+      "file_path": "lean/sets_functions.lean",
+      "theorem_id": "preimage_subset_preimage",
+      "group": "sets_functions",
+      "size": "short",
+      "description": "Monotonicity of set preimage"
+    },
+    {
+      "label": "sets_mapsTo_image",
+      "file_path": "lean/sets_functions.lean",
+      "theorem_id": "image_subset_of_mapsTo",
+      "group": "sets_functions",
+      "size": "medium",
+      "description": "Image subset from MapsTo"
+    },
+    {
+      "label": "sets_left_inverse",
+      "file_path": "lean/sets_functions.lean",
+      "theorem_id": "injective_from_left_inverse",
+      "group": "sets_functions",
+      "size": "medium",
+      "description": "Left inverse implies injective"
+    },
+    {
+      "label": "sets_right_inverse",
+      "file_path": "lean/sets_functions.lean",
+      "theorem_id": "surjective_from_right_inverse",
+      "group": "sets_functions",
+      "size": "medium",
+      "description": "Right inverse implies surjective"
+    },
+    {
+      "label": "nat_add_cancel",
+      "file_path": "lean/number_theory_nat.lean",
+      "theorem_id": "nat_add_cancel_bench",
+      "group": "number_theory_nat",
+      "size": "short",
+      "description": "Nat cancellation through omega"
+    },
+    {
+      "label": "nat_mul_pos",
+      "file_path": "lean/number_theory_nat.lean",
+      "theorem_id": "nat_mul_pos_bench",
+      "group": "number_theory_nat",
+      "size": "short",
+      "description": "Positive product over Nat"
+    },
+    {
+      "label": "nat_mod_lt",
+      "file_path": "lean/number_theory_nat.lean",
+      "theorem_id": "nat_mod_lt_bench",
+      "group": "number_theory_nat",
+      "size": "short",
+      "description": "Nat modulo bound"
+    },
+    {
+      "label": "nat_square_eq_mul",
+      "file_path": "lean/number_theory_nat.lean",
+      "theorem_id": "nat_square_eq_mul",
+      "group": "number_theory_nat",
+      "size": "short",
+      "description": "Nat square notation normalization"
+    },
+    {
+      "label": "nat_dvd_trans",
+      "file_path": "lean/number_theory_nat.lean",
+      "theorem_id": "nat_dvd_trans_bench",
+      "group": "number_theory_nat",
+      "size": "short",
+      "description": "Divisibility transitivity"
+    }
+  ]
+}

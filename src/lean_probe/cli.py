@@ -8,7 +8,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .benchmark import run_benchmark
+from .benchmark import (
+    _external_command_specs,
+    run_benchmark,
+    run_benchmark_suite,
+    run_queue_cutoff_benchmark,
+)
 from .core import LeanProbe
 
 
@@ -85,6 +90,37 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--runs", type=int, default=5)
     benchmark.add_argument("--warmups", type=int, default=1)
     benchmark.add_argument("--include-feedback", action="store_true")
+    benchmark.add_argument("--include-no-cache", action="store_true", help="Time fresh-server LeanProbe checks with no cache reuse")
+    benchmark.add_argument(
+        "--external-command",
+        action="append",
+        default=[],
+        help="Additional verifier timing as NAME=COMMAND; placeholders: {file}, {original}, {cwd}, {theorem}",
+    )
+    benchmark.add_argument("--results-dir", default="", help="Optional directory for raw JSON output")
+    benchmark.add_argument("--label", default="", help="Optional benchmark label")
+
+    suite = sub.add_parser("benchmark-suite", parents=[common_parent], help="Run a JSON benchmark case suite")
+    suite.add_argument("--cases-file", required=True, help="JSON file listing benchmark targets")
+    suite.add_argument("--runs", type=int, default=5)
+    suite.add_argument("--warmups", type=int, default=1)
+    suite.add_argument("--include-feedback", action="store_true")
+    suite.add_argument("--include-no-cache", action="store_true", help="Time fresh-server LeanProbe checks with no cache reuse")
+    suite.add_argument(
+        "--external-command",
+        action="append",
+        default=[],
+        help="Additional verifier timing as NAME=COMMAND; placeholders: {file}, {original}, {cwd}, {theorem}",
+    )
+    suite.add_argument("--results-dir", default="", help="Optional directory for raw JSON output")
+    suite.add_argument("--case", action="append", default=[], help="Run only a named benchmark case")
+
+    queue = sub.add_parser("benchmark-queue", parents=[common_parent], help="Compare Lake cutoffs with LeanInteract env reuse")
+    queue.add_argument("file_path")
+    queue.add_argument("--runs", type=int, default=3)
+    queue.add_argument("--max-cutoffs", type=int, default=0, help="Limit declaration cutoffs; 0 means all")
+    queue.add_argument("--results-dir", default="", help="Optional directory for raw JSON output")
+    queue.add_argument("--label", default="", help="Optional benchmark label")
 
     sub.add_parser("mcp", help="Run the LeanProbe MCP stdio server")
     return parser
@@ -102,6 +138,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "benchmark":
         replacement = _read_text_arg(args.replacement, args.replacement_file)
+        try:
+            external_commands = _external_command_specs(args.external_command)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
         payload = run_benchmark(
             file_path=args.file_path,
             theorem_id=args.theorem_id,
@@ -115,6 +155,51 @@ def main(argv: list[str] | None = None) -> int:
             local_repl_path=args.local_repl_path or None,
             lake_path=args.lake_path,
             verbose=args.verbose,
+            include_no_cache=args.include_no_cache,
+            external_commands=external_commands,
+            results_dir=args.results_dir or None,
+            label=args.label,
+        )
+        _emit(payload, pretty=args.pretty)
+        return 0 if payload.get("success") else 1
+
+    if args.command == "benchmark-suite":
+        try:
+            external_commands = _external_command_specs(args.external_command)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        payload = run_benchmark_suite(
+            cases_file=args.cases_file,
+            cwd=args.cwd or None,
+            runs=args.runs,
+            warmups=args.warmups,
+            include_feedback=args.include_feedback,
+            timeout_s=args.timeout_s,
+            auto_build=args.auto_build,
+            local_repl_path=args.local_repl_path or None,
+            lake_path=args.lake_path,
+            verbose=args.verbose,
+            include_no_cache=args.include_no_cache,
+            external_commands=external_commands,
+            results_dir=args.results_dir or None,
+            case_labels=args.case or None,
+        )
+        _emit(payload, pretty=args.pretty)
+        return 0 if payload.get("success") else 1
+
+    if args.command == "benchmark-queue":
+        payload = run_queue_cutoff_benchmark(
+            file_path=args.file_path,
+            cwd=args.cwd or None,
+            runs=args.runs,
+            max_cutoffs=args.max_cutoffs,
+            timeout_s=args.timeout_s,
+            auto_build=args.auto_build,
+            local_repl_path=args.local_repl_path or None,
+            lake_path=args.lake_path,
+            verbose=args.verbose,
+            results_dir=args.results_dir or None,
+            label=args.label,
         )
         _emit(payload, pretty=args.pretty)
         return 0 if payload.get("success") else 1
