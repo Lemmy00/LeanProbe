@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lean-probe"
+version = "0.1.0"
+description = "Fast Lean 4 proof feedback for agents, powered by LeanInteract."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "LeanProbe contributors" }]
+license = { text = "MIT" }
+keywords = ["Lean", "Lean 4", "theorem proving", "MCP", "agents", "LeanInteract"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Mathematics",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+  "lean-interact>=0.11.0",
+  "mcp>=1.2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-xdist"]
+
+[project.scripts]
+lean-probe = "lean_probe.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Lemmy00/LeanProbe"
+Documentation = "https://github.com/Lemmy00/LeanProbe#readme"
+Source = "https://github.com/Lemmy00/LeanProbe"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
