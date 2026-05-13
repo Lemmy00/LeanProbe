@@ -16,7 +16,7 @@ import statistics
 import subprocess
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,7 +63,7 @@ def _platform_payload() -> dict[str, str]:
 
 
 def _run_text_command(
-    command: list[str],
+    command: Sequence[str] | str,
     *,
     cwd: Path,
     timeout_s: int,
@@ -79,6 +79,7 @@ def _run_text_command(
             timeout=timeout_s,
             check=False,
             env=env,
+            shell=isinstance(command, str),
         )
         elapsed = time.perf_counter() - start
         output = (proc.stdout + "\n" + proc.stderr).strip()
@@ -164,7 +165,7 @@ def _run_external_command(
     }.items():
         command = command.replace("{" + key + "}", value)
     ok, elapsed, output = _run_text_command(
-        ["/bin/sh", "-lc", command],
+        command,
         cwd=project_root,
         timeout_s=timeout_s,
     )

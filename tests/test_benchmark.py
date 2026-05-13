@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -220,11 +221,16 @@ def test_run_text_command_reports_timeout(tmp_path):
 def test_external_command_allows_json_braces(tmp_path):
     original = tmp_path / "Original.lean"
     target = tmp_path / "Candidate.lean"
+    script = tmp_path / "emit_json.py"
     original.write_text("theorem original : True := by\n  trivial\n", encoding="utf-8")
     target.write_text("theorem candidate : True := by\n  trivial\n", encoding="utf-8")
+    script.write_text(
+        "import json, sys\nprint(json.dumps({'success': True, 'file': sys.argv[1]}))\n",
+        encoding="utf-8",
+    )
 
     ok, _elapsed, output = benchmark._run_external_command(
-        'python -c \'import json; print(json.dumps({"success": True, "file": "{file}"}))\'',
+        f'"{sys.executable}" "{script}" "{{file}}"',
         project_root=tmp_path,
         original_file=original,
         lake_target=target,

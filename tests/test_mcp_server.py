@@ -100,7 +100,7 @@ def test_mcp_probe_reads_environment(monkeypatch):
 
     assert probe.auto_build is True
     assert probe.local_repl_path == Path("/tmp/repl").resolve()
-    assert str(probe.lake_path) == "/opt/lake"
+    assert probe.lake_path == Path("/opt/lake")
     assert probe.verbose is True
 
 
