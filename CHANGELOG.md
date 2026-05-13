@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1 - 2026-05-13
 
 - Documented that stdio MCP clients should keep `LEAN_PROBE_AUTO_BUILD=0` and
   build Lean projects before starting LeanProbe, because build output on stdout
