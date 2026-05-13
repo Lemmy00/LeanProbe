@@ -238,7 +238,7 @@ Lake baseline writes a temp full file and runs `lake env lean`.
 
 macOS:
 
-| Group | Cases | Lake avg | Prepare avg | Check avg | Feedback avg | No-cache avg | No-cache / warm |
+| Example group | Targets | Full-file Lake avg | LeanProbe prepare avg | Cached check avg | Cached feedback avg | Fresh LeanProbe avg | Fresh / cached |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `analysis_real` | 5 | 3.893s | 6.024s | 0.039s | 0.022s | 4.014s | 139.7x |
 | `algebra_order` | 5 | 3.900s | 3.683s | 0.048s | 0.039s | 3.987s | 106.7x |
@@ -247,16 +247,31 @@ macOS:
 
 Linux:
 
-| Group | Cases | Lake avg | Prepare avg | Check avg | Feedback avg | No-cache avg | No-cache / warm |
+| Example group | Targets | Full-file Lake avg | LeanProbe prepare avg | Cached check avg | Cached feedback avg | Fresh LeanProbe avg | Fresh / cached |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `analysis_real` | 5 | 2.276s | 2.315s | 0.025s | 0.024s | 2.412s | 103.2x |
 | `algebra_order` | 5 | 2.301s | 2.317s | 0.046s | 0.043s | 2.516s | 78.2x |
 | `sets_functions` | 5 | 2.233s | 2.257s | 0.011s | 0.009s | 2.383s | 245.8x |
 | `number_theory_nat` | 5 | 2.199s | 2.217s | 0.009s | 0.008s | 2.390s | 322.0x |
 
+Column guide:
+
+- `Full-file Lake avg`: average wall time to write a temp full file with the
+  target declaration replaced, then run `lake env lean` on that file.
+- `LeanProbe prepare avg`: average wall time for `lean_probe_prepare`; this
+  warms imports/header and declarations before the target.
+- `Cached check avg`: average `lean_probe_check` time after prepare, checking
+  only the target declaration against the cached environment.
+- `Cached feedback avg`: average `lean_probe_feedback` time after prepare,
+  including diagnostics plus tactic/proof-state metadata.
+- `Fresh LeanProbe avg`: average time for the same target check with a new
+  LeanProbe/LeanInteract server and no prior cache reuse.
+- `Fresh / cached`: `Fresh LeanProbe avg / Cached check avg`; larger values
+  mean cache reuse matters more.
+
 macOS per-target detail:
 
-| Case | File | Lake | Prepare | Check | Feedback | No-cache | Break-even | 3 tries | 10 tries |
+| Case label | File | Full-file Lake | Prepare env | Cached check | Cached feedback | Fresh check | Break-even checks | Speedup at 3 checks | Speedup at 10 checks |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `analysis_abs_sub` | `analysis_real.lean` | 4.072s | 15.791s | 0.085s | 0.030s | 3.797s | 4 | 0.76x | 2.45x |
 | `analysis_abs_reverse` | `analysis_real.lean` | 3.679s | 3.510s | 0.017s | 0.014s | 4.628s | 1 | 3.10x | 10.00x |
@@ -279,6 +294,21 @@ macOS per-target detail:
 | `nat_square_eq_mul` | `number_theory_nat.lean` | 3.790s | 3.492s | 0.021s | 0.009s | 3.718s | 1 | 3.20x | 10.24x |
 | `nat_dvd_trans` | `number_theory_nat.lean` | 3.651s | 3.502s | 0.007s | 0.005s | 3.847s | 1 | 3.11x | 10.22x |
 
+Column guide:
+
+- `Full-file Lake`: one `lake env lean` run on a temp full file for this target.
+- `Prepare env`: one `lean_probe_prepare` run for the environment before this
+  target.
+- `Cached check`: one warm `lean_probe_check` against the prepared environment.
+- `Cached feedback`: one warm `lean_probe_feedback` against the prepared
+  environment.
+- `Fresh check`: one `lean_probe_check` with a fresh LeanProbe/LeanInteract
+  server and no cache reuse.
+- `Break-even checks`: minimum number of repeated target checks needed for
+  `Prepare env + n * Cached check` to be faster than `n * Full-file Lake`.
+- `Speedup at 3/10 checks`: `(n * Full-file Lake) / (Prepare env + n * Cached check)`.
+  Values below `1.0x` mean the prepare cost has not yet paid off.
+
 The first analysis row includes the coldest LeanInteract server setup observed
 in this run. Its prepare time is therefore much higher, and it needs four check
 attempts to break even. The row is kept to make cold-start effects visible.
@@ -299,7 +329,7 @@ Raw JSON for these rows was written under
 `benchmark_results/file-level-linux-full-2026-05-13/`. Those directories are
 ignored by git, so reruns do not pollute the package history.
 
-| Platform | File | Decls | Scenarios | Lake prefix | Lake full file | LeanProbe cached | LeanProbe no-cache | Cached / prefix Lake | Cached / full Lake | Cached / no-cache |
+| Platform | File | Declarations | Checks | Lake prefix total | Lake full-file total | LeanProbe cached total | LeanProbe fresh total | Speedup vs prefix Lake | Speedup vs full Lake | Speedup vs fresh Probe |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | macOS | `analysis_real.lean` | 5 | 10 | 67.992s | 40.216s | 4.775s | 44.699s | 14.24x | 8.42x | 9.36x |
 | macOS | `algebra_order.lean` | 5 | 10 | 46.870s | 48.163s | 4.339s | 40.953s | 10.80x | 11.10x | 9.44x |
@@ -309,6 +339,26 @@ ignored by git, so reruns do not pollute the package history.
 | Linux | `algebra_order.lean` | 5 | 10 | 23.186s | 23.489s | 2.547s | 25.147s | 9.10x | 9.22x | 9.87x |
 | Linux | `sets_functions.lean` | 5 | 10 | 22.679s | 22.567s | 2.384s | 24.195s | 9.51x | 9.47x | 10.15x |
 | Linux | `number_theory_nat.lean` | 5 | 10 | 22.593s | 22.829s | 2.301s | 24.086s | 9.82x | 9.92x | 10.47x |
+
+Column guide:
+
+- `Declarations`: number of declarations walked in that file.
+- `Checks`: number of scenarios checked. Here each declaration contributes two
+  scenarios: a partial declaration containing `sorry`, then the complete
+  declaration.
+- `Lake prefix total`: total terminal time for `lake env lean` on temp prefix
+  files containing header + already accepted prior declarations + current
+  scenario.
+- `Lake full-file total`: total terminal time for `lake env lean` on temp full
+  files where only the current declaration is replaced by the scenario text.
+- `LeanProbe cached total`: total time for one LeanProbe/LeanInteract server
+  walking the same scenarios while reusing the same-file environment.
+- `LeanProbe fresh total`: total time for LeanProbe checks with a fresh
+  LeanProbe/LeanInteract server per scenario.
+- `Speedup vs prefix/full Lake`: corresponding Lake total divided by
+  `LeanProbe cached total`.
+- `Speedup vs fresh Probe`: `LeanProbe fresh total / LeanProbe cached total`;
+  this isolates the value of cache reuse within LeanProbe itself.
 
 ## Reproduce
 
