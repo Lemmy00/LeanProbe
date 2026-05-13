@@ -70,7 +70,8 @@ Lake project being checked. `lake` must be available on `PATH` or passed with
 Required:
 
 - Python 3.10 or newer.
-- Lean 4 and Lake installed through `elan`.
+- Lean 4 and Lake installed through
+  [elan](https://github.com/leanprover/elan).
 - `git`, used by Lean/Lake dependency workflows.
 - A Lean/Lake project to run checks in. For the bundled examples, that project
   must have Mathlib available because the examples start with `import Mathlib`.
@@ -232,6 +233,23 @@ Example MCP configuration:
 }
 ```
 
+Example MCP configuration with LeanProbe environment variables:
+
+```json
+{
+  "mcpServers": {
+    "lean-probe": {
+      "command": "lean-probe",
+      "args": ["mcp"],
+      "env": {
+        "LEAN_PROBE_LAKE_PATH": "/opt/homebrew/bin/lake",
+        "LEAN_PROBE_AUTO_BUILD": "1"
+      }
+    }
+  }
+}
+```
+
 Use `lean_probe_prepare` before repeated checks in the same file, then call
 `lean_probe_check` for concrete target declarations or replacements. When
 ordinary diagnostics are not enough, call `lean_probe_feedback` and inspect
@@ -353,9 +371,12 @@ declarations. The Lake baselines rerun terminal checks for each scenario:
 
 ## Current Results
 
-Last refreshed: May 13, 2026.
+Snapshot refreshed: May 13, 2026.
 
-- Lean: `4.30.0-rc2` (`3dc1a088b6d2d8eafe25a7cd7ec7b58d731bd7cc`).
+- Lean used for this snapshot: `4.30.0-rc2`
+  (`3dc1a088b6d2d8eafe25a7cd7ec7b58d731bd7cc`). Treat the tables as benchmark
+  context for that toolchain snapshot; rerun the benchmark suite for exact
+  numbers on a different Lean release or machine.
 - In the tables below, `Probe` means LeanProbe.
 
 | Environment | Machine | CPU / SoC | Cores / threads | Memory | Runtime and CPU details |

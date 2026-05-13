@@ -36,6 +36,7 @@ lean-probe = "lean_probe.cli:main"
 [project.urls]
 Homepage = "https://github.com/Lemmy00/LeanProbe"
 Documentation = "https://github.com/Lemmy00/LeanProbe#readme"
+Issues = "https://github.com/Lemmy00/LeanProbe/issues"
 Source = "https://github.com/Lemmy00/LeanProbe"
 
 [tool.setuptools.packages.find]
