@@ -164,6 +164,9 @@ turn, then use `lean_probe_check` after concrete edits. When ordinary
 diagnostics do not explain the failure, call `lean_probe_feedback` and inspect
 `messages`, `tactics`, and `feedback_lean`.
 
+For precise agent-facing tool contracts, result-field semantics, and
+`feedback_lean` examples, see [AGENT.md](AGENT.md).
+
 ## Benchmark Files
 
 LeanProbe ships standalone Mathlib benchmark examples under `examples/lean/`.
@@ -518,6 +521,10 @@ Additional validation performed for the May 13, 2026 numbers:
 - `feedback_lean`: target declaration with inline feedback comments;
 - `cache`: header/prior-declaration environment reuse metadata;
 - `elapsed_s`: wall-clock time for the check.
+
+See [AGENT.md](AGENT.md) for the complete MCP output contract, including
+`success` versus `ok`, proof-state stepping, and how agents should consume
+`feedback_lean`.
 
 ## Backend Dependency
 
