@@ -1,16 +1,16 @@
 # LeanProbe
 
 LeanProbe is a standalone Python package, CLI, and MCP server for fast Lean 4
-feedback in coding-agent workflows. It uses
-[LeanInteract](https://github.com/augustepoiroux/LeanInteract) as its execution
-backend, keeps a Lean REPL warm, reuses elaborated imports and prior
+feedback when a tool repeatedly checks declarations in the same Lean project.
+It uses [LeanInteract](https://github.com/augustepoiroux/LeanInteract) as its
+execution backend, keeps a Lean REPL warm, reuses elaborated imports and prior
 declarations, and checks a named target declaration or replacement chunk.
 
 LeanProbe returns Lean diagnostics, warnings, `sorry` detection, tactic
 metadata, goal states, and inline `feedback_lean`. The result is a real Lean
-response for the checked code chunk. Whole-file or whole-project gates can still
-run `lake env lean File.lean`, `lake build`, or CI when that broader scope is
-required.
+response for the checked chunk and prepared environment. Use `lake env lean
+File.lean`, `lake build`, or CI when you need whole-file or whole-project
+acceptance.
 
 ## MCP Tools
 
@@ -18,14 +18,14 @@ LeanProbe exposes the MCP server name `lean-probe` and the tools
 `lean_probe_prepare`, `lean_probe_check`, `lean_probe_feedback`,
 `lean_probe_state`, `lean_probe_step`, and `lean_probe_close_state`.
 
-For agent-facing tool contracts, parameter meanings, result-field semantics,
-and `feedback_lean` examples, see [AGENT.md](AGENT.md).
+For MCP parameter details, result-field semantics, and `feedback_lean` examples,
+see [AGENT.md](AGENT.md).
 
 ## Why It Is Faster
 
-Automated Lean workflows often perform many related checks inside one file:
-try a replacement declaration, inspect diagnostics or proof state, try the next
-replacement, then move to a nearby declaration. A repeated full-file terminal
+Many Lean workflows perform several related checks in one file: check a
+candidate declaration, inspect diagnostics or proof state, try another
+candidate, then move to a nearby declaration. A repeated full-file terminal
 check pays import, header, and prior-declaration elaboration cost each time.
 
 LeanProbe separates that cost:
@@ -36,16 +36,16 @@ env before target + checked declaration -> diagnostics/proof states
 env before target + next checked declaration -> diagnostics/proof states
 ```
 
-For sequential same-file checks, the useful pattern is:
+For sequential same-file checks, the pattern is:
 
 ```text
 header/import env -> next declaration chunk -> next env -> next declaration chunk
 ```
 
-The benchmark suite measures two separate cases:
+The benchmark suite measures two cases:
 
-- repeated target checks: prepare env before one declaration, then repeatedly
-  check replacements for that declaration;
+- repeated target checks: prepare the environment before one declaration, then
+  repeatedly check replacements for that declaration;
 - sequential same-file checks: prepare a header once, then advance declaration by
   declaration with env reuse.
 
@@ -66,7 +66,7 @@ Required:
 - A built Lean project, or `--auto-build` when you want LeanInteract to build it
   before checking.
 
-Recommended local development setup:
+Install the CLI and Python package:
 
 ```bash
 python -m pip install lean-probe
@@ -113,12 +113,13 @@ lean-probe check examples/lean/number_theory_nat.lean nat_mul_pos_bench \
 If the target project does not already have LeanInteract's REPL support built,
 either let LeanInteract build it with `--auto-build` or pass an existing REPL
 checkout with `--local-repl-path`.
-If `--cwd` is supplied, it must be inside a Lake project; LeanProbe fails
-loudly instead of falling back to another project.
+If `--cwd` is supplied, it must be inside a Lake project; otherwise LeanProbe
+returns `error_code="no_project_root"`.
 
-For MCP use, configure the agent to run `lean-probe mcp` from this same Python
-environment. If the agent launches MCP servers outside your activated shell, use
-the absolute path to `.venv/bin/lean-probe` in the MCP configuration.
+For MCP use, configure the MCP client to run `lean-probe mcp` from this same
+Python environment. If the client launches servers outside your activated
+shell, use the absolute path to `.venv/bin/lean-probe` in the MCP
+configuration.
 Set `LEAN_PROBE_LAKE_PATH`, `LEAN_PROBE_LOCAL_REPL_PATH`,
 `LEAN_PROBE_AUTO_BUILD`, or `LEAN_PROBE_VERBOSE` to configure the MCP server
 without CLI flags.
@@ -144,29 +145,25 @@ lean-probe benchmark /path/to/File.lean my_theorem \
   --cwd /path/to/lake-project \
   --runs 5 --warmups 1 --include-feedback --include-no-cache \
   --external-command 'lake-direct=lake env lean {file}' \
-  --results-dir benchmark_results/local-$(date +%F) \
   --pretty
 
 lean-probe benchmark-suite \
   --cases-file examples/benchmark_cases.json \
   --cwd /path/to/mathlib-lake-project \
   --runs 5 --warmups 1 --include-feedback --include-no-cache \
-  --results-dir benchmark_results/local-$(date +%F) \
   --pretty
 
 lean-probe benchmark-file /path/to/File.lean \
   --cwd /path/to/lake-project \
   --runs 3 \
-  --results-dir benchmark_results/local-$(date +%F) \
   --pretty
 ```
 
-`--include-no-cache` is deliberately useful: it times a fresh LeanProbe /
-LeanInteract server per attempt and shows the cost of using LeanInteract without
-persistent env reuse.
+`--include-no-cache` times a fresh LeanProbe/LeanInteract server per attempt.
+Use it to quantify the cost of running without persistent environment reuse.
 
-`--external-command NAME=COMMAND` is the independent escape hatch for comparing
-other verifiers or wrappers. The command runs from `--cwd`; placeholders are
+Use `--external-command NAME=COMMAND` to time another verifier or wrapper
+against the same candidate files. The command runs from `--cwd`; placeholders are
 `{file}` for the temp full file, `{original}` for the source file, `{cwd}` for
 the Lake project root, and `{theorem}` for the target declaration.
 
@@ -220,13 +217,11 @@ Example MCP configuration:
 }
 ```
 
-Agents should call `lean_probe_prepare` at the start of a same-file checking
-turn, then use `lean_probe_check` after concrete edits. When ordinary
-diagnostics do not explain the failure, call `lean_probe_feedback` and inspect
-`messages`, `tactics`, and `feedback_lean`.
-
-For precise agent-facing tool contracts, result-field semantics, and
-`feedback_lean` examples, see [AGENT.md](AGENT.md).
+Use `lean_probe_prepare` before repeated checks in the same file, then call
+`lean_probe_check` for concrete target declarations or replacements. When
+ordinary diagnostics are not enough, call `lean_probe_feedback` and inspect
+`messages`, `tactics`, and `feedback_lean`. See [AGENT.md](AGENT.md) for the
+full MCP contract.
 
 ## Benchmark Files
 
@@ -252,12 +247,12 @@ as `--cwd`.
 | `examples/lean/tcs_weighted_graph_prefix.lean` | selected weighted graph helpers and definitions through `Sym2order` |
 
 The suite file `examples/benchmark_cases.json` lists all 40 targets with labels,
-groups, sizes, and descriptions. Raw benchmark JSON is written to
-`benchmark_results/`, which is ignored by git.
+groups, sizes, and descriptions. Use `--results-dir` when you want to save raw
+benchmark JSON for later analysis.
 
 ## Verification Surfaces
 
-The built-in benchmarks compare standalone, reproducible verification surfaces:
+The built-in benchmarks compare these verification surfaces:
 
 - terminal `lake env lean`: canonical full-file verification of a temp file
   containing the candidate replacement;
@@ -274,22 +269,21 @@ The built-in benchmarks compare standalone, reproducible verification surfaces:
   prior declaration environments across partial/full scenarios;
 - same-file Probe fresh checks: fresh LeanProbe/LeanInteract server per
   scenario;
-- optional external command: any user-provided shell verifier/wrapper timed
+- optional external command: any user-provided shell verifier or wrapper timed
   with the same temp full file.
 
-Lean LSP, MCP, and proof-context tools are useful diagnostics surfaces. Compare
+Lean LSP, MCP, and proof-context tools are diagnostic surfaces. Compare
 project-specific wrappers through `--external-command` or an out-of-tree adapter
 that exits nonzero on hard failure; LeanProbe itself stays independent.
 
 ## Benchmark Experiments
 
-The README reports two benchmark shapes. They answer different questions and
-should not be mixed.
+The README reports two benchmark shapes. They answer different questions.
 
 ### Repeated Target Checks
 
-Question measured: "If an agent tries several complete replacements for the
-same declaration, how much does a prepared environment help?"
+Measures repeated complete-replacement checks for one declaration after the
+environment before that declaration has been prepared.
 
 Per target, the benchmark does this:
 
@@ -317,9 +311,8 @@ lower than the Lake total. `Amortized speedup, 3 attempts` and
 
 ### Sequential Same-File Checks
 
-Question measured: "If an agent works through several declarations in the same
-file, can the checker reuse the file-local environment instead of starting over
-for each scenario?"
+Measures repeated checks across nearby declarations in one file, where a checker
+can reuse the file-local environment instead of starting over for each scenario.
 
 For each targetable declaration in the file, the benchmark checks the complete
 declaration. When the declaration has a `:= by` proof body, it also checks a
@@ -351,7 +344,7 @@ Last refreshed: May 13, 2026.
 | Environment | Machine | CPU / SoC | Cores / threads | Memory | Runtime and CPU details |
 | --- | --- | --- | ---: | ---: | --- |
 | macOS | MacBook Pro `Mac16,7` | Apple M4 Pro | 14 cores, no SMT reported; 10 performance + 4 efficiency | 24 GB unified memory | Darwin 25.4.0, arm64, Python 3.12.12 |
-| Linux `larapc2` | single-socket workstation | Intel Core i7-14700KF | 20 cores / 28 threads | 62 GiB RAM, 8 GiB swap | max 5.6 GHz, L2 28 MiB, L3 33 MiB, Linux 6.8.0-111-generic, Python 3.13.9 |
+| Linux workstation | single-socket workstation | Intel Core i7-14700KF | 20 cores / 28 threads | 62 GiB RAM, 8 GiB swap | max 5.6 GHz, L2 28 MiB, L3 33 MiB, Linux 6.8.0-111-generic, Python 3.13.9 |
 
 Run policy for repeated-target tables: 1 measured run per target, 0 benchmark
 warmups, warm Lake caches from prior example validation, feedback enabled, and
@@ -400,8 +393,6 @@ Per-target repeated-check rows are in [BENCHMARKS.md](BENCHMARKS.md).
 
 Run policy: same as the compact repeated-target tables above. These rows cover
 the 20 longer examples derived from the CodaBench TCS Proving source material.
-Raw JSON was written under `benchmark_results/tcs-local-2026-05-13/` and
-`benchmark_results/tcs-linux-2026-05-13/`.
 
 Grouped summary:
 
@@ -426,11 +417,6 @@ file. This benchmark models a file-level checking session:
    `sorry` version and confirm `sorry` is detected without hard errors;
 3. check the full declaration and require valid-without-sorry;
 4. advance the cached environment only after the full declaration succeeds.
-
-Raw JSON for these rows was written under
-`benchmark_results/file-level-local-full-2026-05-13/` and
-`benchmark_results/file-level-linux-full-2026-05-13/`. Those directories are
-ignored by git, so reruns do not pollute the package history.
 
 | Platform | File | Declarations | Scenarios | Lake growing-prefix total | Lake full-file total | Probe cached total | Probe fresh total | Speedup vs growing-prefix Lake | Speedup vs full-file Lake | Speedup vs fresh Probe |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -485,7 +471,6 @@ lean-probe benchmark-suite \
   --cases-file examples/benchmark_cases.json \
   --cwd /path/to/mathlib-lake-project \
   --runs 1 --warmups 0 --include-feedback --include-no-cache \
-  --results-dir benchmark_results/standalone-local-$(date +%F) \
   --pretty
 ```
 
@@ -498,7 +483,6 @@ lean-probe benchmark-file \
   examples/lean/analysis_real.lean \
   --cwd /path/to/mathlib-lake-project \
   --runs 1 \
-  --results-dir benchmark_results/standalone-local-$(date +%F) \
   --pretty
 ```
 
@@ -531,20 +515,17 @@ Run the optional real LeanInteract smoke test:
 LEAN_PROBE_RUN_INTEGRATION=1 python -m pytest tests/test_integration.py -q
 ```
 
-Additional validation performed for the May 13, 2026 numbers:
+Validation for the May 13, 2026 numbers:
 
-- every positive example file used for the May 13 benchmark tables passed
-  `lake env lean`;
-- all 20 compact repeated target benchmark cases returned `success=true`;
-- the longer `tcs_*` example files pass `lake env lean`, and all 20 CodaBench
-  TCS benchmark cases returned `success=true` with feedback and fresh-server
-  baselines on both macOS and `larapc2`;
-- all 4 sequential same-file benchmark files reported successful partial-sorry
-  and full-without-sorry scenarios for Lake and LeanProbe;
-- the same Python tests and benchmark suite passed on `larapc2`;
+- every benchmark source file passed `lake env lean`;
+- all compact and TCS repeated-target benchmark cases returned
+  `success=true`;
+- all sequential same-file benchmark rows completed with matching Lake and
+  LeanProbe success status for the expected partial-sorry and full-declaration
+  scenarios;
 - one intentionally broken replacement for `nat_mul_pos_bench` returned
-  `ok=false`, `has_errors=true`, a concrete type-mismatch diagnostic, and
-  non-empty `feedback_lean`.
+  `ok=false`, `has_errors=true`, a type-mismatch diagnostic, and non-empty
+  `feedback_lean`.
 
 ## Output Shape
 
@@ -566,8 +547,7 @@ Current `error_code` values include `no_project_root`, `file_not_found`,
 `unknown_session`, `timeout`, and `backend_error`.
 
 See [AGENT.md](AGENT.md) for the complete MCP output contract, including
-`success` versus `ok`, proof-state stepping, and how agents should consume
-`feedback_lean`.
+`success` versus `ok`, proof-state stepping, and `feedback_lean`.
 
 Declarations inside `mutual ... end` blocks are included as prior context for
 later targets, but the individual declarations inside the mutual block are not
@@ -580,7 +560,6 @@ primary backend dependency. LeanInteract provides the Lean REPL process,
 incremental elaboration, command responses, proof states, tactic stepping, and
 the low-level interaction API.
 
-LeanProbe builds on that backend with package-level ergonomics for coding
-agents: file segmentation, same-file declaration targeting, warm prior
-environments, replacement checks, feedback annotation, CLI commands, MCP tools,
-and reproducible benchmark harnesses.
+LeanProbe builds on that backend with file segmentation, same-file declaration
+targeting, warm prior environments, replacement checks, feedback annotation,
+CLI commands, MCP tools, and reproducible benchmark harnesses.

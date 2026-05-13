@@ -30,4 +30,4 @@ LEAN_PROBE_RUN_INTEGRATION=1 python -m pytest tests/test_integration.py -q
 - Keep LeanProbe independent of downstream projects.
 - Preserve the MCP tool names in `src/lean_probe/mcp_server.py`.
 - Update `AGENT.md` when tool semantics or payload fields change.
-- Keep benchmark raw outputs out of git; `benchmark_results/` is ignored.
+- Keep generated benchmark result files out of commits.

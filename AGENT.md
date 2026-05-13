@@ -101,8 +101,8 @@ Interpretation rules:
 
 ## `feedback_lean`
 
-`feedback_lean` is intended to be placed directly into an agent's next prompt.
-It is not a patch that should normally be saved back to the Lean source.
+`feedback_lean` is intended as model-readable context for the next attempt. It
+is not a patch that should normally be saved back to the Lean source.
 
 LeanProbe inserts Lean block comments before relevant lines:
 
@@ -124,8 +124,8 @@ Feedback blocks can contain:
 - indentation that matches the surrounding Lean line.
 
 The annotation is intentionally compact. Long diagnostics and large proof
-states are truncated so they remain useful in agent context. If the agent needs
-the raw structured data, read `messages` and `tactics` directly.
+states are truncated before insertion. For the raw structured data, read
+`messages` and `tactics` directly.
 
 ## `lean_probe_prepare`
 
@@ -240,7 +240,7 @@ Typical Lean failure:
 ```
 
 On failure, `lean_probe_check` may rerun internally with tactic collection so
-the response can include useful `tactics` and `feedback_lean`.
+the response can include `tactics` and `feedback_lean`.
 
 ## `lean_probe_feedback`
 
@@ -256,7 +256,7 @@ Use this when:
 
 - `lean_probe_check` returns `ok=false` and the diagnostic summary is not enough;
 - the next candidate should be guided by local proof states;
-- the agent needs annotated Lean text for prompt context.
+- the next attempt needs annotated Lean context.
 
 Typical result fields:
 
@@ -282,7 +282,7 @@ Typical result fields:
 
 `feedback` is usually more expensive than `check` because it asks LeanInteract
 for tactic metadata. Prefer `check` for ordinary candidate loops and call
-`feedback` when the agent needs richer context.
+`feedback` when richer context is needed.
 
 ## `lean_probe_state`
 
@@ -415,7 +415,7 @@ Typical result:
 }
 ```
 
-Use this when the agent no longer needs to apply tactics to a proof state.
+Use this when tactic exploration for that proof state is finished.
 
 ## Recommended Workflows
 
@@ -425,9 +425,9 @@ Use this when the agent no longer needs to apply tactics to a proof state.
 2. For each candidate, call `lean_probe_check` with a complete replacement
    declaration.
 3. If `ok=false`, inspect `output` and `messages`.
-4. If the next edit is not obvious, call `lean_probe_feedback` and pass
-   `feedback_lean` plus structured `messages`/`tactics` into the next model
-   prompt.
+4. If the next edit is not clear from the diagnostics, call
+   `lean_probe_feedback` and pass `feedback_lean` plus structured
+   `messages`/`tactics` into the next attempt.
 5. After accepting and writing a candidate to disk, run a whole-file or
    whole-project command when that larger scope matters.
 
@@ -455,9 +455,9 @@ tries to restart it and report the error if restart fails.
    with `lean_probe_check`.
 5. Call `lean_probe_close_state` when the tactic session is no longer needed.
 
-## Agent Prompt Snippet
+## Operational Rules Snippet
 
-When using LeanProbe, give the agent these operational rules:
+For tool-using systems, these are the core operating rules:
 
 ```text
 Use lean_probe_prepare before repeated checks in a Lean file. Use

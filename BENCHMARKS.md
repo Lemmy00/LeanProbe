@@ -1,7 +1,7 @@
 # LeanProbe Benchmark Details
 
-This file holds the detailed per-target benchmark rows for the May 13, 2026
-README results. The README keeps the grouped summary tables and methodology.
+Detailed per-target rows for the May 13, 2026 benchmark results. The README
+contains grouped summary tables, methodology, and reproduction commands.
 
 Run policy for these repeated-target rows: 1 measured run per target, 0
 benchmark warmups, warm Lake caches from prior example validation, feedback
@@ -52,8 +52,8 @@ Column guide:
 | `nat_square_eq_mul` | `number_theory_nat.lean` | 3.790s | 3.492s | 0.021s | 0.009s | 3.718s | 1 | 3.20x | 10.24x |
 | `nat_dvd_trans` | `number_theory_nat.lean` | 3.651s | 3.502s | 0.007s | 0.005s | 3.847s | 1 | 3.11x | 10.22x |
 
-The first analysis row includes the coldest LeanInteract server setup observed
-in this run. Its prepare time is therefore much higher, and it needs four check
+The first analysis row includes the coldest LeanInteract server setup in this
+dataset. Its prepare time is therefore much higher, and it needs four check
 attempts to break even.
 
 ## TCS Challenge Examples: macOS Per-Target Detail
