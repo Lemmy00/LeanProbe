@@ -238,14 +238,23 @@ def create_server(probe: LeanProbe | None = None) -> Any:
 def _install_shutdown_handlers(probe: LeanProbe) -> None:
     atexit.register(probe.close)
 
-    def _handler(signum: int, _frame: Any) -> None:
+    def _handler(signum: int, frame: Any, previous: Any = None) -> None:
         probe.close()
+        if callable(previous) and previous is not signal.default_int_handler:
+            previous(signum, frame)
         raise SystemExit(128 + signum)
+
+    def _chained_handler(previous: Any) -> Any:
+        def _inner(signum: int, frame: Any) -> None:
+            _handler(signum, frame, previous)
+
+        return _inner
 
     for name in ("SIGTERM", "SIGINT"):
         sig = getattr(signal, name, None)
         if sig is not None:
-            signal.signal(sig, _handler)
+            previous = signal.getsignal(sig)
+            signal.signal(sig, _chained_handler(previous))
 
 
 def run() -> None:

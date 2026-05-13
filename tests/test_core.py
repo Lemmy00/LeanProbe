@@ -255,11 +255,13 @@ def test_segment_file_strips_universe_params_from_names():
 
 
 def test_segment_file_does_not_capture_invalid_identifier_characters():
-    _header, segments = segment_file("theorem foo*bar : True := by\n  trivial\n")
+    invalid_names = ["foo*bar", "foo,bar", "foo)", "foo}"]
 
-    assert segments[0].kind == "theorem"
-    assert segments[0].name == ""
-    assert core._find_segment(segments, "foo*bar") is None
+    for invalid_name in invalid_names:
+        _header, segments = segment_file(f"theorem {invalid_name} : True := by\n  trivial\n")
+        assert segments[0].kind == "theorem"
+        assert segments[0].name == ""
+        assert core._find_segment(segments, invalid_name) is None
 
 
 def test_segment_file_keeps_mutual_block_as_one_context_chunk():
@@ -472,6 +474,34 @@ def test_target_not_found_returns_error_code(monkeypatch, tmp_path):
 
     assert payload["success"] is False
     assert payload["error_code"] == "target_not_found"
+
+
+def test_target_inside_mutual_returns_hint(monkeypatch, tmp_path):
+    _install_fake_lean_interact(monkeypatch)
+    project, target = _write_project(
+        tmp_path,
+        "\n".join(
+            [
+                "mutual",
+                "  def evenly : Nat -> Bool",
+                "    | 0 => true",
+                "    | n + 1 => oddly n",
+                "",
+                "  def oddly : Nat -> Bool",
+                "    | 0 => false",
+                "    | n + 1 => evenly n",
+                "end",
+                "",
+            ]
+        ),
+    )
+    probe = LeanProbe()
+
+    payload = probe.check_target(target, theorem_id="evenly", cwd=project)
+
+    assert payload["success"] is False
+    assert payload["error_code"] == "target_not_found"
+    assert "inside a mutual block" in payload["hint"]
 
 
 def test_explicit_invalid_cwd_does_not_fall_back_to_file_project(monkeypatch, tmp_path):

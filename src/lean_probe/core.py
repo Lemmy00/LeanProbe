@@ -351,6 +351,27 @@ def _find_segment(segments: list[LeanIncrementalSegment], theorem_id: str) -> Le
     return None
 
 
+def _mutual_target_hint(segments: list[LeanIncrementalSegment], theorem_id: str) -> str:
+    wanted = str(theorem_id or "").strip()
+    if not wanted:
+        return ""
+    names = {wanted, wanted.split(".")[-1]}
+    for segment in segments:
+        if segment.kind != "mutual":
+            continue
+        code_mask = _lean_code_mask(segment.text)
+        for match in DECLARATION_PATTERN.finditer(segment.text):
+            if not code_mask[match.start()]:
+                continue
+            name = str(match.group("name") or "").strip()
+            if name in names:
+                return (
+                    "target appears inside a mutual block; LeanProbe uses mutual blocks as context chunks "
+                    "and does not target their inner declarations individually"
+                )
+    return ""
+
+
 def _pos_to_dict(pos: Any | None, *, line_offset: int = 0) -> dict[str, int] | None:
     if pos is None:
         return None
@@ -1213,7 +1234,7 @@ class LeanProbe:
         if normalized_action == "prepare":
             target = _find_segment(segments, theorem_id) if theorem_id else None
             if theorem_id and target is None:
-                return {
+                payload = {
                     "success": False,
                     "ok": False,
                     "backend": "lean_interact",
@@ -1225,6 +1246,9 @@ class LeanProbe:
                     "error_code": "target_not_found",
                     "error": "target declaration not found",
                 }
+                if hint := _mutual_target_hint(segments, theorem_id):
+                    payload["hint"] = hint
+                return payload
             if target is not None:
                 env, env_error, env_elapsed, cache_hit, env_error_code, env_timed_out = self._ensure_env_before(
                     session,
@@ -1260,7 +1284,7 @@ class LeanProbe:
 
         target = _find_segment(segments, theorem_id)
         if target is None:
-            return {
+            payload = {
                 "success": False,
                 "ok": False,
                 "backend": "lean_interact",
@@ -1272,6 +1296,9 @@ class LeanProbe:
                 "error_code": "target_not_found",
                 "error": "target declaration not found",
             }
+            if hint := _mutual_target_hint(segments, theorem_id):
+                payload["hint"] = hint
+            return payload
         env_before, env_error, env_elapsed, cache_hit, env_error_code, env_timed_out = self._ensure_env_before(
             session,
             segments,

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lean-probe"
-version = "0.1.0"
+version = "0.2.0"
 description = "Fast Lean 4 proof feedback for agents, powered by LeanInteract."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,7 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 mcp = ["mcp>=1.2.0,<2"]
-dev = ["build", "mcp>=1.2.0,<2", "mypy", "pre-commit", "pytest", "pytest-xdist", "ruff"]
+dev = ["build", "mcp>=1.2.0,<2", "mypy", "pre-commit", "pytest", "pytest-xdist", "ruff", "twine"]
 
 [project.scripts]
 lean-probe = "lean_probe.cli:main"

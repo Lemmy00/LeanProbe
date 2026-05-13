@@ -128,11 +128,7 @@ def test_file_level_scenarios_skip_nameless_mutual_target():
 def test_full_scenario_file_replaces_only_current_declaration(tmp_path):
     lean_file = tmp_path / "Demo.lean"
     lean_file.write_text(
-        "import Mathlib\n\n"
-        "theorem first : True := by\n"
-        "  trivial\n\n"
-        "theorem second : True := by\n"
-        "  trivial\n",
+        "import Mathlib\n\ntheorem first : True := by\n  trivial\n\ntheorem second : True := by\n  trivial\n",
         encoding="utf-8",
     )
     header, segments = benchmark.segment_file(lean_file.read_text(encoding="utf-8"))

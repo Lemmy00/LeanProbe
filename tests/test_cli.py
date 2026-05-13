@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
-from lean_probe import cli, core
+from lean_probe import __version__, cli, core
 
 
 def _install_fake_lean_interact(monkeypatch):
@@ -144,6 +144,24 @@ def test_cli_replacement_file_and_failure_exit_code(monkeypatch, tmp_path, capsy
     assert output["error_code"] == "target_not_found"
 
 
+def test_cli_strict_cwd_miss_exits_one(monkeypatch, tmp_path, capsys):
+    _install_fake_lean_interact(monkeypatch)
+    project = tmp_path / "Demo"
+    module_dir = project / "Demo"
+    module_dir.mkdir(parents=True)
+    (project / "lakefile.lean").write_text("import Lake\n", encoding="utf-8")
+    target = module_dir / "Main.lean"
+    target.write_text("theorem demo : True := by\n  trivial\n", encoding="utf-8")
+    invalid = tmp_path / "NotAProject"
+    invalid.mkdir()
+
+    code = cli.main(["check", str(target), "demo", "--cwd", str(invalid)])
+    output = json.loads(capsys.readouterr().out)
+
+    assert code == 1
+    assert output["error_code"] == "no_project_root"
+
+
 def test_cli_state_reads_stdin(monkeypatch, tmp_path, capsys):
     _install_fake_lean_interact(monkeypatch)
     project = tmp_path / "Demo"
@@ -192,4 +210,4 @@ def test_cli_version_uses_package_version(capsys):
     except SystemExit as exc:
         assert exc.code == 0
 
-    assert capsys.readouterr().out.startswith("lean-probe 0.1.0")
+    assert capsys.readouterr().out.strip() == f"lean-probe {__version__}"

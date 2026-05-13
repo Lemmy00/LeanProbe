@@ -91,7 +91,7 @@ Check the Python package and CLI:
 
 ```bash
 python -c "import lean_probe, lean_interact; print('ok')"
-lean-probe --version  # lean-probe X.Y.Z
+lean-probe --version  # lean-probe 0.2.0
 ```
 
 Check that Lean/Lake are visible:
@@ -551,7 +551,8 @@ See [AGENT.md](AGENT.md) for the complete MCP output contract, including
 
 Declarations inside `mutual ... end` blocks are included as prior context for
 later targets, but the individual declarations inside the mutual block are not
-separate LeanProbe targets.
+separate LeanProbe targets. If a requested target is found inside such a block,
+LeanProbe returns `target_not_found` with a hint that explains the limitation.
 
 ## Backend Dependency
 

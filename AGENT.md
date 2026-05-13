@@ -27,6 +27,13 @@ the supplied chunk plus the prepared environment. Use `lake env lean File.lean`,
 Lean declarations inside a `mutual ... end` block are not individually
 targetable. LeanProbe keeps the whole mutual block as one prior-context chunk
 when checking later targets, because Lean elaborates that block as a unit.
+If a requested name is found inside a mutual block, LeanProbe returns
+`error_code="target_not_found"` with a hint explaining that limitation.
+
+Project roots are resolved in this order: explicit `cwd`, then the checked
+file's parent directories, then the MCP server process's current directory. An
+explicit `cwd` must be inside a Lake project; LeanProbe does not fall back when
+that value is invalid.
 
 ## Tool Selection
 
@@ -82,7 +89,8 @@ For `check` and `feedback`, these additional fields matter:
 - `target`: matched declaration name.
 - `target_kind`: declaration kind, such as `theorem`, `lemma`, `def`,
   `instance`, `class`, `structure`, `inductive`, `abbrev`, `axiom`, `opaque`,
-  or `example`.
+  `example`, or `mutual`. A `mutual` segment is a context chunk, not an
+  individually named target.
 - `target_range`: source-file line range for the target declaration.
 - `tactics`: tactic text, ranges, goals, proof-state ids, and used constants.
 - `feedback_lean`: checked Lean declaration with inline feedback comments.

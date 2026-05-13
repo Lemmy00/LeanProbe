@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-05-13
 
 - Expanded declaration segmentation for modifiers, attributes, additional Lean
   declaration kinds, Unicode names, and universe-parameter declarations.
