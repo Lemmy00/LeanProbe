@@ -20,6 +20,9 @@ class _FakeProbe:
     def tactic_step(self, *args, **kwargs):
         return {"action": "step", "args": args, "kwargs": kwargs}
 
+    def close_state(self, *args, **kwargs):
+        return {"action": "close_state", "args": args, "kwargs": kwargs}
+
 
 def test_mcp_public_names_are_stable():
     assert MCP_SERVER_NAME == "lean-probe"
@@ -29,6 +32,7 @@ def test_mcp_public_names_are_stable():
         "lean_probe_feedback",
         "lean_probe_state",
         "lean_probe_step",
+        "lean_probe_close_state",
     ]
 
 
@@ -46,7 +50,11 @@ def test_mcp_tool_descriptions_expose_agent_contracts():
     assert "success=false" in tools["lean_probe_check"].description
     feedback_description = " ".join(tools["lean_probe_feedback"].description.split())
     assert "usually costlier than check" in feedback_description
+    assert "same complete-declaration rule" in feedback_description
     assert "Create proof states" in tools["lean_probe_state"].description
+    step_description = " ".join(tools["lean_probe_step"].description.split())
+    assert "Session and proof_state ids die" in step_description
+    assert "Close a proof-state session" in tools["lean_probe_close_state"].description
 
     check_params = tools["lean_probe_check"].parameters["properties"]
     assert "signature plus proof/body" in check_params["replacement"]["description"]
@@ -66,11 +74,13 @@ def test_mcp_tool_wrappers_call_injected_probe():
         timeout_s=7,
     )
     step = tools["lean_probe_step"].fn(session_id="session", proof_state=3, tactic="rfl", timeout_s=5)
+    close = tools["lean_probe_close_state"].fn(session_id="session")
 
     assert check["action"] == "check"
     assert check["kwargs"]["cwd"] == "/tmp/project"
     assert check["kwargs"]["include_tactics"] is True
     assert step == {"action": "step", "args": ("session", 3, "rfl"), "kwargs": {"timeout_s": 5}}
+    assert close == {"action": "close_state", "args": ("session",), "kwargs": {}}
 
 
 def test_mcp_probe_reads_environment(monkeypatch):

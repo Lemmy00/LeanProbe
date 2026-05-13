@@ -16,7 +16,7 @@ required.
 
 LeanProbe exposes the MCP server name `lean-probe` and the tools
 `lean_probe_prepare`, `lean_probe_check`, `lean_probe_feedback`,
-`lean_probe_state`, and `lean_probe_step`.
+`lean_probe_state`, `lean_probe_step`, and `lean_probe_close_state`.
 
 For agent-facing tool contracts, parameter meanings, result-field semantics,
 and `feedback_lean` examples, see [AGENT.md](AGENT.md).
@@ -69,6 +69,18 @@ Required:
 Recommended local development setup:
 
 ```bash
+python -m pip install lean-probe
+```
+
+Install MCP support when you want to run the MCP server:
+
+```bash
+python -m pip install "lean-probe[mcp]"
+```
+
+Editable checkout for development:
+
+```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
@@ -79,7 +91,7 @@ Check the Python package and CLI:
 
 ```bash
 python -c "import lean_probe, lean_interact; print('ok')"
-lean-probe --version
+lean-probe --version  # lean-probe X.Y.Z
 ```
 
 Check that Lean/Lake are visible:
@@ -89,8 +101,8 @@ lake --version
 lean --version
 ```
 
-Run LeanProbe from the repository, pointing `--cwd` at any Lake project that
-can import the dependencies used by the file being checked:
+Run LeanProbe by pointing `--cwd` at a Lake project that can import the
+dependencies used by the file being checked:
 
 ```bash
 lean-probe check examples/lean/number_theory_nat.lean nat_mul_pos_bench \
@@ -101,6 +113,8 @@ lean-probe check examples/lean/number_theory_nat.lean nat_mul_pos_bench \
 If the target project does not already have LeanInteract's REPL support built,
 either let LeanInteract build it with `--auto-build` or pass an existing REPL
 checkout with `--local-repl-path`.
+If `--cwd` is supplied, it must be inside a Lake project; LeanProbe fails
+loudly instead of falling back to another project.
 
 For MCP use, configure the agent to run `lean-probe mcp` from this same Python
 environment. If the agent launches MCP servers outside your activated shell, use
@@ -327,7 +341,7 @@ succeeds. The Lake baselines rerun terminal checks for each scenario:
 
 ## Current Results
 
-Date: May 13, 2026.
+Last refreshed: May 13, 2026.
 
 - Lean: `4.30.0-rc2` (`3dc1a088b6d2d8eafe25a7cd7ec7b58d731bd7cc`).
 - In the tables below, `Probe` means LeanProbe.
@@ -543,6 +557,11 @@ Additional validation performed for the May 13, 2026 numbers:
 - `feedback_lean`: target declaration with inline feedback comments;
 - `cache`: header/prior-declaration environment reuse metadata;
 - `elapsed_s`: wall-clock time for the check.
+
+Current `error_code` values include `no_project_root`, `file_not_found`,
+`target_not_found`, `lean_interact_unavailable`, `lean_interact_start_failed`,
+`header_failed`, `prior_decl_failed`, `dead_server`, `session_dead`,
+`unknown_session`, `timeout`, and `backend_error`.
 
 See [AGENT.md](AGENT.md) for the complete MCP output contract, including
 `success` versus `ok`, proof-state stepping, and how agents should consume

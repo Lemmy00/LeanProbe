@@ -7,7 +7,6 @@ import pytest
 
 from lean_probe.core import LeanProbe
 
-
 pytestmark = pytest.mark.integration
 
 

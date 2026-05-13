@@ -10,16 +10,45 @@ from __future__ import annotations
 import hashlib
 import platform
 import re
+import threading
 import time
 import uuid
+from collections import OrderedDict
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
-
+DECLARATION_KINDS = (
+    "theorem",
+    "lemma",
+    "example",
+    "def",
+    "instance",
+    "class",
+    "structure",
+    "inductive",
+    "abbrev",
+    "axiom",
+    "opaque",
+)
+DECLARATION_MODIFIERS = (
+    "private",
+    "protected",
+    "noncomputable",
+    "partial",
+    "unsafe",
+    "nonrec",
+    "scoped",
+    "local",
+)
+LEAN_IDENTIFIER_PATTERN = r"(?!--)[^\s:({\[]+"
 DECLARATION_PATTERN = re.compile(
-    r"^[ \t]*(?:@[A-Za-z0-9_.'-]+(?:[ \t]+[A-Za-z0-9_.'-]+)*[ \t]+)*"
-    r"(theorem|lemma|example|def|instance)\s+([A-Za-z0-9_'.-]+)?",
+    r"^[ \t]*"
+    r"(?:(?:@\[[^\]]*\][ \t]*(?:\n[ \t]*)?)|"
+    rf"(?:(?:{'|'.join(DECLARATION_MODIFIERS)})\b[ \t]+))*"
+    rf"(?P<kind>{'|'.join(DECLARATION_KINDS)})\b"
+    rf"(?:\s+(?P<name>{LEAN_IDENTIFIER_PATTERN}))?",
     re.MULTILINE,
 )
 LOCAL_REPL_CANDIDATES = (
@@ -30,6 +59,14 @@ PROJECT_MARKERS = ("lakefile.lean", "lakefile.toml")
 NOISY_MESSAGE_PREFIXES = (
     "note: this linter can be disabled with",
 )
+DEFAULT_MESSAGE_LIMIT = 12
+DEFAULT_TACTIC_LIMIT = 20
+DEFAULT_SORRY_LIMIT = 20
+FEEDBACK_TACTIC_LIMIT = 18
+FEEDBACK_ENTRIES_PER_LINE = 4
+FEEDBACK_MESSAGE_CHARS = 240
+FEEDBACK_GOALS_CHARS = 300
+DEFAULT_MAX_CODE_SESSIONS = 16
 
 
 @dataclass(frozen=True)
@@ -229,8 +266,8 @@ def segment_file(text: str) -> tuple[str, list[LeanIncrementalSegment]]:
         start = boundaries[index]
         end = boundaries[index + 1] if index + 1 < len(boundaries) else len(text)
         chunk = text[start:end].rstrip() + "\n"
-        kind = str(match.group(1) or "")
-        name = str(match.group(2) or "").strip()
+        kind = str(match.group("kind") or "")
+        name = str(match.group("name") or "").strip()
         segments.append(
             LeanIncrementalSegment(
                 index=index,
@@ -276,7 +313,7 @@ def _clean_message_text(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _message_payloads(response: Any, *, line_offset: int = 0, limit: int = 12) -> list[dict[str, Any]]:
+def _message_payloads(response: Any, *, line_offset: int = 0, limit: int = DEFAULT_MESSAGE_LIMIT) -> list[dict[str, Any]]:
     payloads = []
     for message in list(getattr(response, "messages", []) or [])[:limit]:
         text = _clean_message_text(str(getattr(message, "data", "") or ""))
@@ -315,7 +352,7 @@ def _format_message_summary(messages: list[dict[str, Any]], *, limit: int = 3) -
     return "; ".join(parts)
 
 
-def _tactic_payloads(response: Any, *, line_offset: int = 0, limit: int = 20) -> list[dict[str, Any]]:
+def _tactic_payloads(response: Any, *, line_offset: int = 0, limit: int = DEFAULT_TACTIC_LIMIT) -> list[dict[str, Any]]:
     payloads = []
     for tactic in list(getattr(response, "tactics", []) or [])[:limit]:
         payloads.append(
@@ -333,7 +370,7 @@ def _tactic_payloads(response: Any, *, line_offset: int = 0, limit: int = 20) ->
     return payloads
 
 
-def _sorry_payloads(response: Any, *, limit: int = 20) -> list[dict[str, Any]]:
+def _sorry_payloads(response: Any, *, limit: int = DEFAULT_SORRY_LIMIT) -> list[dict[str, Any]]:
     payloads = []
     for sorry in list(getattr(response, "sorries", []) or [])[:limit]:
         payloads.append(
@@ -356,29 +393,29 @@ def _has_sorry(response: Any) -> bool:
     return False
 
 
-def _feedback_lean(text: str, messages: list[dict[str, Any]], tactics: list[dict[str, Any]], *, limit: int = 18) -> str:
+def _feedback_lean(text: str, messages: list[dict[str, Any]], tactics: list[dict[str, Any]], *, limit: int = FEEDBACK_TACTIC_LIMIT) -> str:
     by_line: dict[int, list[str]] = {}
     for message in messages:
         pos = message.get("start") if isinstance(message.get("start"), Mapping) else None
         line = int(pos.get("line", 1) if isinstance(pos, Mapping) else 1)
         raw = str(message.get("message", "") or "").replace("\n", " ")
         entry = f"-- type: {message.get('severity', '')}, msg: {raw}"
-        by_line.setdefault(max(1, line), []).append(entry[:240])
+        by_line.setdefault(max(1, line), []).append(entry[:FEEDBACK_MESSAGE_CHARS])
     for tactic in tactics[:limit]:
         pos = tactic.get("start") if isinstance(tactic.get("start"), Mapping) else None
         line = int(pos.get("line", 1) if isinstance(pos, Mapping) else 1)
         goals = str(tactic.get("goals", "") or "").strip()
         if goals:
-            by_line.setdefault(max(1, line), []).append("-- proof state: " + goals.replace("\n", " ")[:300])
+            by_line.setdefault(max(1, line), []).append("-- proof state: " + goals.replace("\n", " ")[:FEEDBACK_GOALS_CHARS])
 
     output: list[str] = []
-    for line_number, line in enumerate(text.splitlines(), start=1):
+    for line_number, source_line in enumerate(text.splitlines(), start=1):
         if line_number in by_line:
-            indent = line[: len(line) - len(line.lstrip())]
+            indent = source_line[: len(source_line) - len(source_line.lstrip())]
             output.append(f"{indent}/- <feedback>")
-            output.extend(f"{indent}{entry}" for entry in by_line[line_number][:4])
+            output.extend(f"{indent}{entry}" for entry in by_line[line_number][:FEEDBACK_ENTRIES_PER_LINE])
             output.append(f"{indent}</feedback> -/")
-        output.append(line)
+        output.append(source_line)
     return "\n".join(output)
 
 
@@ -474,12 +511,12 @@ def _error_code_for_message(error: str) -> str:
         return ""
     if _timeout_error_text(lowered):
         return "timeout"
-    if _dead_server_error(lowered):
-        return "dead_server"
-    if "lean-interact unavailable" in lowered:
-        return "lean_interact_unavailable"
     if "failed to start leaninteract server" in lowered:
         return "lean_interact_start_failed"
+    if "lean-interact unavailable" in lowered:
+        return "lean_interact_unavailable"
+    if _dead_server_error(lowered):
+        return "dead_server"
     if "lean project root not detected" in lowered:
         return "no_project_root"
     if "lean file not found" in lowered:
@@ -500,7 +537,7 @@ def _error_code_for_exception(exc: BaseException) -> str:
 
 
 class LeanProbe:
-    """Reusable LeanInteract-backed checker for agent proof loops."""
+    """Reusable LeanInteract-backed checker for serialized agent proof loops."""
 
     def __init__(
         self,
@@ -509,44 +546,51 @@ class LeanProbe:
         local_repl_path: str | Path | None = None,
         lake_path: str | Path = "lake",
         verbose: bool = False,
+        max_code_sessions: int = DEFAULT_MAX_CODE_SESSIONS,
     ) -> None:
         self.auto_build = auto_build
         self.local_repl_path = Path(local_repl_path).expanduser().resolve() if local_repl_path else None
         self.lake_path = Path(lake_path)
         self.verbose = verbose
         self._sessions: dict[tuple[str, str], _IncrementalSession] = {}
-        self._code_sessions: dict[str, _CodeSession] = {}
+        self._code_sessions: OrderedDict[str, _CodeSession] = OrderedDict()
+        self.max_code_sessions = max(1, int(max_code_sessions))
+        self._lock = threading.RLock()
 
     def close(self) -> None:
-        for session in list(self._sessions.values()):
-            session.close()
-        self._sessions.clear()
-        for session in list(self._code_sessions.values()):
-            session.close()
-        self._code_sessions.clear()
+        with self._lock:
+            for session in list(self._sessions.values()):
+                session.close()
+            self._sessions.clear()
+            for code_session in list(self._code_sessions.values()):
+                code_session.close()
+            self._code_sessions.clear()
 
     def capabilities(self, cwd: str | Path | None = None) -> dict[str, Any]:
-        _, _, _, _, _, import_error = _import_lean_interact()
-        project_root = self._resolve_project_root(cwd)
-        repl_dir = self._select_repl_dir(project_root) if project_root else None
-        degraded: list[str] = []
-        degraded_codes: list[str] = []
-        if import_error:
-            degraded.append(import_error)
-            degraded_codes.append("lean_interact_unavailable")
-        if project_root is None:
-            degraded.append("Lean project root not detected")
-            degraded_codes.append("no_project_root")
-        return {
-            "available": not import_error and bool(project_root),
-            "project_root": str(project_root or ""),
-            "repl_dir": str(repl_dir or ""),
-            "active_sessions": [
-                {"project_root": project, "file": file_path} for project, file_path in self._sessions.keys()
-            ],
-            "degraded_reasons": degraded,
-            "degraded_codes": degraded_codes,
-        }
+        with self._lock:
+            _, _, _, _, _, import_error = _import_lean_interact()
+            project_root = self._resolve_project_root(cwd)
+            repl_dir = self._select_repl_dir(project_root) if project_root else None
+            degraded: list[str] = []
+            degraded_codes: list[str] = []
+            if import_error:
+                degraded.append(import_error)
+                degraded_codes.append("lean_interact_unavailable")
+            if project_root is None:
+                degraded.append("Lean project root not detected")
+                degraded_codes.append("no_project_root")
+            return {
+                "available": not import_error and bool(project_root),
+                "project_root": str(project_root or ""),
+                "repl_dir": str(repl_dir or ""),
+                "active_sessions": [
+                    {"project_root": project, "file": file_path} for project, file_path in self._sessions.keys()
+                ],
+                "code_sessions": list(self._code_sessions.keys()),
+                "max_code_sessions": self.max_code_sessions,
+                "degraded_reasons": degraded,
+                "degraded_codes": degraded_codes,
+            }
 
     def prepare_file(
         self,
@@ -556,15 +600,16 @@ class LeanProbe:
         cwd: str | Path | None = None,
         timeout_s: int = 60,
     ) -> dict[str, Any]:
-        return self._check(
-            action="prepare",
-            file_path=file_path,
-            theorem_id=theorem_id,
-            cwd=cwd,
-            replacement="",
-            include_tactics=False,
-            timeout_s=timeout_s,
-        )
+        with self._lock:
+            return self._check(
+                action="prepare",
+                file_path=file_path,
+                theorem_id=theorem_id,
+                cwd=cwd,
+                replacement="",
+                include_tactics=False,
+                timeout_s=timeout_s,
+            )
 
     def check_target(
         self,
@@ -576,15 +621,16 @@ class LeanProbe:
         include_tactics: bool = False,
         timeout_s: int = 60,
     ) -> dict[str, Any]:
-        return self._check(
-            action="check",
-            file_path=file_path,
-            theorem_id=theorem_id,
-            cwd=cwd,
-            replacement=replacement,
-            include_tactics=include_tactics,
-            timeout_s=timeout_s,
-        )
+        with self._lock:
+            return self._check(
+                action="check",
+                file_path=file_path,
+                theorem_id=theorem_id,
+                cwd=cwd,
+                replacement=replacement,
+                include_tactics=include_tactics,
+                timeout_s=timeout_s,
+            )
 
     def feedback(
         self,
@@ -595,15 +641,16 @@ class LeanProbe:
         replacement: str = "",
         timeout_s: int = 60,
     ) -> dict[str, Any]:
-        return self._check(
-            action="feedback",
-            file_path=file_path,
-            theorem_id=theorem_id,
-            cwd=cwd,
-            replacement=replacement,
-            include_tactics=True,
-            timeout_s=timeout_s,
-        )
+        with self._lock:
+            return self._check(
+                action="feedback",
+                file_path=file_path,
+                theorem_id=theorem_id,
+                cwd=cwd,
+                replacement=replacement,
+                include_tactics=True,
+                timeout_s=timeout_s,
+            )
 
     def proof_state_from_code(
         self,
@@ -613,48 +660,74 @@ class LeanProbe:
         include_tactics: bool = False,
         timeout_s: int = 60,
     ) -> dict[str, Any]:
-        session_id = str(uuid.uuid4())
-        session, error = self._new_code_session(cwd)
-        if session is None:
+        with self._lock:
+            session_id = str(uuid.uuid4())
+            session, error = self._new_code_session(cwd)
+            if session is None:
+                return {
+                    "success": False,
+                    "ok": False,
+                    "backend": "lean_interact",
+                    "tool": "lean_probe",
+                    "action": "state",
+                    "timed_out": False,
+                    "error_code": _error_code_for_message(error),
+                    "error": error,
+                }
+            self._remember_code_session(session_id, session)
+            response, elapsed, run_error, run_error_code, timed_out = self._run_command(
+                session.server,
+                code,
+                env=None,
+                include_tactics=include_tactics,
+                timeout_s=timeout_s,
+                retry=lambda: self._restart_code_session(session_id),
+            )
+            messages = _message_payloads(response) if response is not None else []
+            sorries = _sorry_payloads(response) if response is not None else []
+            has_errors = bool(response.has_errors()) if response is not None and hasattr(response, "has_errors") else bool(run_error)
             return {
-                "success": False,
-                "ok": False,
+                "success": not bool(run_error),
+                "ok": not has_errors and bool(sorries),
                 "backend": "lean_interact",
                 "tool": "lean_probe",
                 "action": "state",
-                "timed_out": False,
-                "error_code": _error_code_for_message(error),
-                "error": error,
+                "session_id": session_id,
+                "env": getattr(response, "env", None) if response is not None else None,
+                "has_errors": has_errors,
+                "timed_out": timed_out,
+                "error_code": run_error_code if run_error else "",
+                "error": run_error,
+                "elapsed_s": round(elapsed, 3),
+                "messages": messages,
+                "sorries": sorries,
+                "tactics": _tactic_payloads(response) if response is not None and include_tactics else [],
             }
-        self._code_sessions[session_id] = session
-        response, elapsed, run_error, run_error_code, timed_out = self._run_command(
-            session.server,
-            code,
-            env=None,
-            include_tactics=include_tactics,
-            timeout_s=timeout_s,
-            retry=lambda: self._restart_code_session(session_id),
-        )
-        messages = _message_payloads(response) if response is not None else []
-        sorries = _sorry_payloads(response) if response is not None else []
-        has_errors = bool(response.has_errors()) if response is not None and hasattr(response, "has_errors") else bool(run_error)
-        return {
-            "success": not bool(run_error),
-            "ok": not has_errors and bool(sorries),
-            "backend": "lean_interact",
-            "tool": "lean_probe",
-            "action": "state",
-            "session_id": session_id,
-            "env": getattr(response, "env", None) if response is not None else None,
-            "has_errors": has_errors,
-            "timed_out": timed_out,
-            "error_code": run_error_code if run_error else "",
-            "error": run_error,
-            "elapsed_s": round(elapsed, 3),
-            "messages": messages,
-            "sorries": sorries,
-            "tactics": _tactic_payloads(response) if response is not None and include_tactics else [],
-        }
+
+    def close_state(self, session_id: str) -> dict[str, Any]:
+        with self._lock:
+            session = self._code_sessions.pop(session_id, None)
+            if session is None:
+                return {
+                    "success": False,
+                    "ok": False,
+                    "backend": "lean_interact",
+                    "tool": "lean_probe",
+                    "action": "close_state",
+                    "session_id": session_id,
+                    "timed_out": False,
+                    "error_code": "unknown_session",
+                    "error": "unknown LeanProbe proof session",
+                }
+            session.close()
+            return {
+                "success": True,
+                "ok": True,
+                "backend": "lean_interact",
+                "tool": "lean_probe",
+                "action": "close_state",
+                "session_id": session_id,
+            }
 
     def tactic_step(
         self,
@@ -664,68 +737,77 @@ class LeanProbe:
         *,
         timeout_s: int = 60,
     ) -> dict[str, Any]:
-        session = self._code_sessions.get(session_id)
-        if session is None:
-            return {
-                "success": False,
-                "ok": False,
-                "backend": "lean_interact",
-                "tool": "lean_probe",
-                "action": "step",
-                "session_id": session_id,
-                "timed_out": False,
-                "error_code": "unknown_session",
-                "error": "unknown LeanProbe proof session",
-            }
-        _, ProofStep, _, _, _, import_error = _import_lean_interact()
-        if ProofStep is None:
-            return {
-                "success": False,
-                "ok": False,
-                "backend": "lean_interact",
-                "tool": "lean_probe",
-                "action": "step",
-                "session_id": session_id,
-                "timed_out": False,
-                "error_code": "lean_interact_unavailable",
-                "error": import_error,
-            }
-        start = time.perf_counter()
-        try:
-            response = session.server.run(ProofStep(proof_state=proof_state, tactic=tactic), timeout=timeout_s)
-            elapsed = time.perf_counter() - start
-            status = str(getattr(response, "proof_status", "") or "")
-            return {
-                "success": True,
-                "ok": status == "Completed",
-                "backend": "lean_interact",
-                "tool": "lean_probe",
-                "action": "step",
-                "session_id": session_id,
-                "proof_state": getattr(response, "proof_state", None),
-                "goals": list(getattr(response, "goals", []) or []),
-                "proof_status": status,
-                "elapsed_s": round(elapsed, 3),
-            }
-        except Exception as exc:
-            error_code = _error_code_for_exception(exc)
-            return {
-                "success": False,
-                "ok": False,
-                "backend": "lean_interact",
-                "tool": "lean_probe",
-                "action": "step",
-                "session_id": session_id,
-                "timed_out": error_code == "timeout",
-                "error_code": error_code,
-                "error": str(exc),
-                "elapsed_s": round(time.perf_counter() - start, 3),
-            }
+        with self._lock:
+            session = self._code_sessions.get(session_id)
+            if session is None:
+                return {
+                    "success": False,
+                    "ok": False,
+                    "backend": "lean_interact",
+                    "tool": "lean_probe",
+                    "action": "step",
+                    "session_id": session_id,
+                    "timed_out": False,
+                    "error_code": "unknown_session",
+                    "error": "unknown LeanProbe proof session",
+                }
+            self._code_sessions.move_to_end(session_id)
+            _, ProofStep, _, _, _, import_error = _import_lean_interact()
+            if ProofStep is None:
+                return {
+                    "success": False,
+                    "ok": False,
+                    "backend": "lean_interact",
+                    "tool": "lean_probe",
+                    "action": "step",
+                    "session_id": session_id,
+                    "timed_out": False,
+                    "error_code": "lean_interact_unavailable",
+                    "error": import_error,
+                }
+            start = time.perf_counter()
+            try:
+                response = session.server.run(ProofStep(proof_state=proof_state, tactic=tactic), timeout=timeout_s)
+                elapsed = time.perf_counter() - start
+                status = str(getattr(response, "proof_status", "") or "")
+                return {
+                    "success": True,
+                    "ok": status == "Completed",
+                    "backend": "lean_interact",
+                    "tool": "lean_probe",
+                    "action": "step",
+                    "session_id": session_id,
+                    "proof_state": getattr(response, "proof_state", None),
+                    "goals": list(getattr(response, "goals", []) or []),
+                    "proof_status": status,
+                    "elapsed_s": round(elapsed, 3),
+                }
+            except Exception as exc:
+                error_code = _error_code_for_exception(exc)
+                session_dead = error_code == "dead_server"
+                if session_dead:
+                    stale = self._code_sessions.pop(session_id, None)
+                    if stale is not None:
+                        stale.close()
+                return {
+                    "success": False,
+                    "ok": False,
+                    "backend": "lean_interact",
+                    "tool": "lean_probe",
+                    "action": "step",
+                    "session_id": session_id,
+                    "timed_out": error_code == "timeout",
+                    "error_code": "session_dead" if session_dead else error_code,
+                    "session_dead": session_dead,
+                    "hint": "call lean_probe_state again" if session_dead else "",
+                    "error": str(exc),
+                    "elapsed_s": round(time.perf_counter() - start, 3),
+                }
 
     def _resolve_project_root(self, cwd: str | Path | None, file_path: str | Path | None = None) -> Path | None:
-        candidates: list[Path] = []
         if cwd:
-            candidates.append(Path(cwd).expanduser().resolve())
+            return find_lean_project_root(Path(cwd).expanduser().resolve())
+        candidates: list[Path] = []
         if file_path:
             path = Path(file_path).expanduser()
             candidates.append((path if path.is_dir() else path.parent).resolve())
@@ -802,6 +884,8 @@ class LeanProbe:
         if LeanREPLConfig is None or LeanServer is None or LocalProject is None:
             return None, import_error
         project_root = self._resolve_project_root(cwd)
+        if cwd and project_root is None:
+            return None, "Lean project root not detected"
         try:
             kwargs: dict[str, Any] = {
                 "lake_path": str(self.lake_path),
@@ -817,6 +901,13 @@ class LeanProbe:
         except Exception as exc:
             return None, f"failed to start LeanInteract server: {exc}"
         return _CodeSession(server=server, config=config, cwd=project_root), ""
+
+    def _remember_code_session(self, session_id: str, session: _CodeSession) -> None:
+        self._code_sessions[session_id] = session
+        self._code_sessions.move_to_end(session_id)
+        while len(self._code_sessions) > self.max_code_sessions:
+            _old_id, old_session = self._code_sessions.popitem(last=False)
+            old_session.close()
 
     def _restart_session(self, session: _IncrementalSession) -> tuple[_IncrementalSession | None, str]:
         key = self._session_key(session.project_root, session.file_path)

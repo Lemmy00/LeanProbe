@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import atexit
 import os
+import signal
 from typing import Annotated, Any
 
-from pydantic import Field
+try:
+    from pydantic import Field
+except Exception:
+    def Field(*, description: str) -> None:  # type: ignore[no-redef]
+        return None
 
 from .core import LeanProbe
-
 
 MCP_SERVER_NAME = "lean-probe"
 TOOL_NAMES = [
@@ -17,6 +22,7 @@ TOOL_NAMES = [
     "lean_probe_feedback",
     "lean_probe_state",
     "lean_probe_step",
+    "lean_probe_close_state",
 ]
 
 FilePath = Annotated[
@@ -78,7 +84,7 @@ def create_server(probe: LeanProbe | None = None) -> Any:
     try:
         from mcp.server.fastmcp import FastMCP
     except Exception as exc:
-        raise RuntimeError(f"mcp package unavailable: {exc}") from exc
+        raise RuntimeError(f"mcp package unavailable: {exc}. Install with `pip install 'lean-probe[mcp]'`.") from exc
 
     active_probe = probe or _probe_from_env()
     mcp = FastMCP(MCP_SERVER_NAME)
@@ -140,7 +146,8 @@ def create_server(probe: LeanProbe | None = None) -> Any:
         """Check with richer diagnostics, tactic metadata, and feedback_lean.
 
         Use after lean_probe_check when messages are not enough, or when an
-        agent needs proof states and annotated Lean context. This is usually
+        agent needs proof states and annotated Lean context. `replacement` has
+        the same complete-declaration rule as lean_probe_check. This is usually
         costlier than check because it requests tactic metadata.
         """
 
@@ -163,7 +170,8 @@ def create_server(probe: LeanProbe | None = None) -> Any:
 
         Returns a session_id and one proof_state id per sorry when Lean accepts
         the code with sorry. `ok=true` means proof states were extracted, not
-        that the proof is complete.
+        that the proof is complete. `ok=false` with success=true usually means
+        Lean accepted the code but no sorry proof states were present.
         """
 
         return active_probe.proof_state_from_code(
@@ -184,7 +192,8 @@ def create_server(probe: LeanProbe | None = None) -> Any:
 
         Use a session_id from lean_probe_state and a proof_state id from state
         or a previous step. `ok=true` means LeanInteract reports the proof as
-        Completed; otherwise inspect returned goals/proof_state.
+        Completed; otherwise inspect returned goals/proof_state. Session and
+        proof_state ids die with the MCP server process.
         """
 
         return active_probe.tactic_step(
@@ -194,11 +203,42 @@ def create_server(probe: LeanProbe | None = None) -> Any:
             timeout_s=timeout_s,
         )
 
+    @mcp.tool()
+    def lean_probe_close_state(
+        session_id: SessionId,
+    ) -> dict[str, Any]:
+        """Close a proof-state session created by lean_probe_state.
+
+        Use when tactic exploration for a state is finished. Long-lived MCP
+        servers also evict old state sessions automatically, but explicit close
+        releases the LeanInteract process immediately.
+        """
+
+        return active_probe.close_state(session_id)
+
     return mcp
 
 
+def _install_shutdown_handlers(probe: LeanProbe) -> None:
+    atexit.register(probe.close)
+
+    def _handler(signum: int, _frame: Any) -> None:
+        probe.close()
+        raise SystemExit(128 + signum)
+
+    for name in ("SIGTERM", "SIGINT"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            signal.signal(sig, _handler)
+
+
 def run() -> None:
-    create_server().run()
+    probe = _probe_from_env()
+    _install_shutdown_handlers(probe)
+    try:
+        create_server(probe=probe).run()
+    finally:
+        probe.close()
 
 
 if __name__ == "__main__":

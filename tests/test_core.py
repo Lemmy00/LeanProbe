@@ -187,6 +187,51 @@ def test_segment_file_recognizes_instance_declarations():
     assert segments[0].name == "demoInst"
 
 
+def test_segment_file_recognizes_modifiers_compound_attributes_and_more_kinds():
+    text = "\n".join(
+        [
+            "import Mathlib",
+            "",
+            "@[simp, reducible]",
+            "private theorem private_thm : True := by",
+            "  trivial",
+            "",
+            "lemma αβγ : True := by",
+            "  trivial",
+            "",
+            "noncomputable abbrev hiddenValue : Nat := 1",
+            "",
+            "protected structure Box where",
+            "  value : Nat",
+            "",
+            "inductive Color where",
+            "  | red",
+            "",
+            "class HasFoo (α : Type) where",
+            "  foo : α",
+            "",
+            "axiom trusted : True",
+            "",
+            "opaque secret : Nat",
+            "",
+        ]
+    )
+
+    _header, segments = segment_file(text)
+
+    assert [(segment.kind, segment.name) for segment in segments] == [
+        ("theorem", "private_thm"),
+        ("lemma", "αβγ"),
+        ("abbrev", "hiddenValue"),
+        ("structure", "Box"),
+        ("inductive", "Color"),
+        ("class", "HasFoo"),
+        ("axiom", "trusted"),
+        ("opaque", "secret"),
+    ]
+    assert segments[0].text.startswith("@[simp, reducible]\nprivate theorem")
+
+
 def test_find_segment_matches_qualified_and_short_names():
     _header, segments = segment_file("namespace N\n\ntheorem demo : True := by\n  trivial\n\nend N\n")
 
@@ -221,6 +266,29 @@ def test_dead_server_error_tokens_are_stable():
         "process has exited",
     ]:
         assert core._dead_server_error(text) is True
+
+
+@pytest.mark.parametrize(
+    ("message", "code"),
+    [
+        ("request timed out", "timeout"),
+        ("failed to start LeanInteract server: no such file", "lean_interact_start_failed"),
+        ("lean-interact unavailable: missing", "lean_interact_unavailable"),
+        ("Lean server is not running", "dead_server"),
+        ("Lean project root not detected", "no_project_root"),
+        ("Lean file not found", "file_not_found"),
+        ("target declaration not found", "target_not_found"),
+        ("LeanInteract header warmup failed", "header_failed"),
+        ("failed to build env before target at demo", "prior_decl_failed"),
+        ("unexpected backend failure", "backend_error"),
+    ],
+)
+def test_error_code_for_message_is_stable(message, code):
+    assert core._error_code_for_message(message) == code
+
+
+def test_error_code_startup_failure_takes_precedence_over_dead_server_text():
+    assert core._error_code_for_message("failed to start LeanInteract server: broken pipe") == "lean_interact_start_failed"
 
 
 def test_capabilities_reports_degraded_codes(monkeypatch, tmp_path):
@@ -336,6 +404,31 @@ def test_target_not_found_returns_error_code(monkeypatch, tmp_path):
     assert payload["error_code"] == "target_not_found"
 
 
+def test_explicit_invalid_cwd_does_not_fall_back_to_file_project(monkeypatch, tmp_path):
+    _install_fake_lean_interact(monkeypatch)
+    project, target = _write_project(tmp_path, "theorem demo : True := by\n  trivial\n")
+    invalid = tmp_path / "NotAProject"
+    invalid.mkdir()
+    probe = LeanProbe()
+
+    payload = probe.check_target(target, theorem_id="demo", cwd=invalid)
+
+    assert payload["success"] is False
+    assert payload["error_code"] == "no_project_root"
+
+
+def test_proof_state_explicit_invalid_cwd_returns_project_error(monkeypatch, tmp_path):
+    _install_fake_lean_interact(monkeypatch)
+    invalid = tmp_path / "NotAProject"
+    invalid.mkdir()
+    probe = LeanProbe()
+
+    payload = probe.proof_state_from_code("theorem ex : True := by sorry", cwd=invalid)
+
+    assert payload["success"] is False
+    assert payload["error_code"] == "no_project_root"
+
+
 def test_prepare_target_not_found_returns_error_code(monkeypatch, tmp_path):
     _install_fake_lean_interact(monkeypatch)
     project, target = _write_project(tmp_path, "theorem demo : True := by\n  trivial\n")
@@ -418,6 +511,58 @@ def test_proof_state_and_tactic_step(monkeypatch, tmp_path):
     assert state["sorries"][0]["proof_state"] == 5
     assert step["ok"] is True
     assert step["proof_status"] == "Completed"
+
+
+def test_close_state_releases_session(monkeypatch, tmp_path):
+    _install_fake_lean_interact(monkeypatch)
+    project, _target = _write_project(tmp_path, "theorem demo : True := by\n  trivial\n")
+    probe = LeanProbe()
+
+    state = probe.proof_state_from_code("theorem ex (n : Nat) : n = n := by sorry", cwd=project)
+    closed = probe.close_state(state["session_id"])
+    second_close = probe.close_state(state["session_id"])
+
+    assert closed["ok"] is True
+    assert second_close["success"] is False
+    assert second_close["error_code"] == "unknown_session"
+
+
+def test_code_sessions_are_lru_bounded(monkeypatch, tmp_path):
+    _install_fake_lean_interact(monkeypatch)
+    project, _target = _write_project(tmp_path, "theorem demo : True := by\n  trivial\n")
+    probe = LeanProbe(max_code_sessions=2)
+
+    first = probe.proof_state_from_code("theorem a : True := by sorry", cwd=project)
+    second = probe.proof_state_from_code("theorem b : True := by sorry", cwd=project)
+    third = probe.proof_state_from_code("theorem c : True := by sorry", cwd=project)
+
+    assert list(probe._code_sessions.keys()) == [second["session_id"], third["session_id"]]
+    assert first["session_id"] not in probe._code_sessions
+
+
+def test_tactic_step_dead_server_marks_session_dead(monkeypatch, tmp_path):
+    _install_fake_lean_interact(monkeypatch)
+    project, _target = _write_project(tmp_path, "theorem demo : True := by\n  trivial\n")
+    probe = LeanProbe()
+    state = probe.proof_state_from_code("theorem ex (n : Nat) : n = n := by sorry", cwd=project)
+    session = probe._code_sessions[state["session_id"]]
+
+    class _DeadStepServer:
+        def run(self, request, timeout=None):
+            raise RuntimeError("Lean server is not running")
+
+        def kill(self):
+            pass
+
+    session.server = _DeadStepServer()
+
+    step = probe.tactic_step(state["session_id"], state["sorries"][0]["proof_state"], "rfl")
+
+    assert step["success"] is False
+    assert step["error_code"] == "session_dead"
+    assert step["session_dead"] is True
+    assert step["hint"] == "call lean_probe_state again"
+    assert state["session_id"] not in probe._code_sessions
 
 
 def test_proof_state_without_sorry_is_not_ok(monkeypatch, tmp_path):

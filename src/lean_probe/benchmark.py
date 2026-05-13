@@ -16,13 +16,13 @@ import statistics
 import subprocess
 import tempfile
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from .core import LeanProbe, find_lean_project_root, segment_file
-
 
 AMORTIZED_ATTEMPTS = (1, 3, 10)
 
@@ -593,7 +593,7 @@ def run_benchmark(
     result = {
         "success": not failures,
         "label": label,
-        "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "project_root": str(project_root),
         "file": str(resolved),
         "lake_file": str(lake_target),
@@ -728,7 +728,7 @@ def run_benchmark_suite(
     successful = [item for item in results if item.get("success") and not item.get("failures")]
     suite = {
         "success": all(item.get("success") for item in results),
-        "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "cases_file": str(Path(cases_file).expanduser().resolve()),
         "project_root": str(find_lean_project_root(cwd) if cwd else ""),
         "runs": runs,
@@ -769,7 +769,7 @@ def _run_li_cutoffs(
         session, session_error = probe._get_session(project_root, file_path)
         if session is None:
             return False, 0.0, [], session_error
-        response, header_elapsed, header_error = probe._run_command(
+        response, header_elapsed, header_error, _header_error_code, _header_timed_out = probe._run_command(
             session.server,
             header,
             env=None,
@@ -787,7 +787,7 @@ def _run_li_cutoffs(
         for index, segment in enumerate(segments):
             cmd = "".join(item.text for item in segments[: index + 1]) if mode == "cumulative" else segment.text
             run_env = header_env if mode == "cumulative" else env
-            response, elapsed, error = probe._run_command(
+            response, elapsed, error, _error_code, _timed_out = probe._run_command(
                 session.server,
                 cmd,
                 env=run_env,
@@ -959,7 +959,7 @@ def run_queue_cutoff_benchmark(
     result = {
         "success": not failures,
         "label": label,
-        "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "project_root": str(project_root),
         "file": str(resolved),
         "runs": runs,
@@ -1370,7 +1370,7 @@ def run_file_level_benchmark(
     result = {
         "success": not failures,
         "label": label,
-        "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "project_root": str(project_root),
         "file": str(resolved),
         "runs": runs,

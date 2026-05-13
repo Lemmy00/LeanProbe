@@ -12,9 +12,9 @@ from typing import Any
 from . import __version__
 from .benchmark import (
     _external_command_specs,
-    run_file_level_benchmark,
     run_benchmark,
     run_benchmark_suite,
+    run_file_level_benchmark,
 )
 from .core import LeanProbe
 
@@ -160,7 +160,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "mcp":
         from .mcp_server import run
 
-        run()
+        try:
+            run()
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         return 0
 
     if args.command == "benchmark":

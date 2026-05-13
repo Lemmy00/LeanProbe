@@ -27,7 +27,7 @@ def _install_fake_lean_interact(monkeypatch):
     class _Response:
         def __init__(self, *, env: int = 1, sorries=None, tactics=None):
             self.env = env
-            self.messages = []
+            self.messages: list[object] = []
             self.sorries = sorries or []
             self.tactics = tactics or []
 

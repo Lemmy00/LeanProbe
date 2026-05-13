@@ -33,6 +33,7 @@ the supplied chunk plus the prepared environment. Use `lake env lean File.lean`,
 | `lean_probe_feedback` | A check failed, or the agent needs proof states, tactic ranges, and annotated Lean context. | Same status fields as check, with tactics and `feedback_lean`. |
 | `lean_probe_state` | Exploring a proof state from standalone Lean code containing `sorry`. | A session id and one proof-state id per `sorry`. |
 | `lean_probe_step` | Trying one tactic against a proof state returned by `lean_probe_state` or a previous step. | New goals/proof state, or `ok=true` if the proof is completed. |
+| `lean_probe_close_state` | Finished with a proof-state session. | Closes the session and releases its LeanInteract process. |
 
 ## Shared Result Fields
 
@@ -53,7 +54,7 @@ Most LeanProbe tools return JSON-compatible dictionaries with these fields:
 - `error_code`: stable machine-readable failure code, such as
   `no_project_root`, `file_not_found`, `target_not_found`,
   `lean_interact_unavailable`, `header_failed`, `prior_decl_failed`,
-  `dead_server`, or `timeout`.
+  `dead_server`, `session_dead`, `unknown_session`, or `timeout`.
 - `timed_out`: true when LeanProbe classified the backend failure as a timeout.
 - `messages`: Lean diagnostics. Each message includes `severity`, `message`,
   chunk-local `start`/`end`, and file-adjusted `file_start`/`file_end` when a
@@ -62,6 +63,11 @@ Most LeanProbe tools return JSON-compatible dictionaries with these fields:
 - `cache`: environment ids and cache metadata. These ids are internal to the
   live MCP server process and should not be persisted.
 
+LeanProbe caps structured payloads by default: 12 messages, 20 tactics,
+20 sorries, 18 tactics in `feedback_lean`, and 4 feedback entries per source
+line. Long message and goal snippets are truncated before insertion into
+`feedback_lean`.
+
 For `check` and `feedback`, these additional fields matter:
 
 - `valid_without_sorry`: LeanInteract's validity result with `sorry` rejected.
@@ -69,7 +75,8 @@ For `check` and `feedback`, these additional fields matter:
 - `has_sorry`: whether the checked chunk used `sorry`.
 - `target`: matched declaration name.
 - `target_kind`: declaration kind, such as `theorem`, `lemma`, `def`,
-  `instance`, or `example`.
+  `instance`, `class`, `structure`, `inductive`, `abbrev`, `axiom`, `opaque`,
+  or `example`.
 - `target_range`: source-file line range for the target declaration.
 - `tactics`: tactic text, ranges, goals, proof-state ids, and used constants.
 - `feedback_lean`: checked Lean declaration with inline feedback comments.
@@ -317,10 +324,16 @@ is complete.
 
 The `session_id` is held in memory by the running MCP server. If the server
 restarts, create a new state session.
+LeanProbe keeps a bounded LRU cache of proof-state sessions. Close sessions
+explicitly with `lean_probe_close_state` when tactic exploration is finished.
 
 MCP server configuration can be supplied through environment variables:
 `LEAN_PROBE_LAKE_PATH`, `LEAN_PROBE_LOCAL_REPL_PATH`,
 `LEAN_PROBE_AUTO_BUILD`, and `LEAN_PROBE_VERBOSE`.
+
+LeanProbe serializes public operations with an internal lock. Treat one
+LeanProbe/MCP server process as a serialized checker, not as a throughput pool
+for independent concurrent checks.
 
 ## `lean_probe_step`
 
@@ -374,6 +387,30 @@ Typical incomplete result:
 When `ok=false` and `success=true`, use the returned `proof_state` and `goals`
 to decide the next tactic.
 
+If `lean_probe_step` returns `error_code="session_dead"` and
+`session_dead=true`, create a fresh proof state with `lean_probe_state`.
+
+## `lean_probe_close_state`
+
+Purpose: close a proof-state session created by `lean_probe_state`.
+
+Inputs:
+
+- `session_id` (required): value returned by `lean_probe_state`.
+
+Typical result:
+
+```json
+{
+  "success": true,
+  "ok": true,
+  "action": "close_state",
+  "session_id": "6b276d6f-1c0b-42a3-8f7b-0f59aab26742"
+}
+```
+
+Use this when the agent no longer needs to apply tactics to a proof state.
+
 ## Recommended Workflows
 
 ### Repeated Candidate Checks For One Declaration
@@ -410,6 +447,7 @@ tries to restart it and report the error if restart fails.
 4. Continue with the returned proof-state id until `proof_status` is
    `Completed`, or use the goals to rewrite the full declaration and check it
    with `lean_probe_check`.
+5. Call `lean_probe_close_state` when the tactic session is no longer needed.
 
 ## Agent Prompt Snippet
 

@@ -9,26 +9,26 @@ description = "Fast Lean 4 proof feedback for agents, powered by LeanInteract."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "LeanProbe contributors" }]
-license = { text = "MIT" }
+license = "MIT"
 keywords = ["Lean", "Lean 4", "theorem proving", "MCP", "agents", "LeanInteract"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Scientific/Engineering :: Mathematics",
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-  "lean-interact>=0.11.0",
-  "mcp>=1.2.0",
+  "lean-interact>=0.11.0,<1",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-xdist"]
+mcp = ["mcp>=1.2.0,<2"]
+dev = ["build", "mcp>=1.2.0,<2", "mypy", "pre-commit", "pytest", "pytest-xdist", "ruff"]
 
 [project.scripts]
 lean-probe = "lean_probe.cli:main"
@@ -41,9 +41,26 @@ Source = "https://github.com/Lemmy00/LeanProbe"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+lean_probe = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
 markers = [
   "integration: optional real Lean/LeanInteract integration tests",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+strict = false
+warn_unused_ignores = true
