@@ -3,9 +3,11 @@
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from .core import LeanIncrementalSegment, LeanProbe
+from .probe import LeanProbe
+from .projects import find_lean_project_root
+from .segmentation import LeanIncrementalSegment, segment_file
 
-__all__ = ["LeanIncrementalSegment", "LeanProbe"]
+__all__ = ["LeanIncrementalSegment", "LeanProbe", "find_lean_project_root", "segment_file"]
 
 
 def _source_tree_version() -> str:

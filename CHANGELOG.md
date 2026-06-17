@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.3.0 - 2026-06-17
+
+Agent-integration redesign of the MCP surface (breaking). The MCP server now
+advertises usage `instructions` on connect and reports its real version in
+`serverInfo` (previously the `mcp` library version), and the tool set is
+renamed/streamlined for agent usability.
+
+- New MCP tools (`lean_*`): `lean_check` (verify any standalone snippet — the new
+  low-friction default), `lean_check_target` (merges the old `check`/`feedback`
+  via a `with_feedback` flag; `theorem_id` is now `name`), `lean_status`
+  (was `lean_probe_capabilities`, with `warm` to pre-boot the REPL),
+  `lean_proof_state`, `lean_tactic`, `lean_close_proof`. The standalone
+  `lean_probe_prepare` MCP tool is dropped (warming is implicit; `prepare_file`
+  remains on the Python API). Tools carry read-only/destructive annotations.
+- `replacement` is now validated: a bare proof body is rejected with
+  `error_code="replacement_not_a_declaration"` instead of a cryptic parse error.
+- Every failure payload carries an actionable `hint`; `no_project_root` lists the
+  directories searched. Payloads echo the resolved `project_root`.
+- Fixed a dead-server recovery bug: a restarted REPL is now rebuilt from a fresh
+  environment instead of replaying stale `env` ids.
+- Fixed segmentation of `where`/nested declarations so a helper using a
+  declaration keyword is no longer torn off into a bogus top-level chunk.
+- MCP defaults are stdio-safe (auto-build/verbose off) and `lake` is auto-detected
+  (PATH, then elan) so an empty-env client still works.
+- CLI mirrors the tools (`status`, `check`, `check-target`, `proof-state`,
+  `prepare`); benchmark commands are imported lazily.
+- Internals split into focused modules (`segmentation`, `projects`, `errors`,
+  `payloads`, `sessions`, `probe`); `core` remains a compatibility facade and
+  `LeanProbe`/`LeanIncrementalSegment`/`segment_file` stay importable from the
+  package root. The Python API is unchanged and backwards compatible.
+
 ## 0.2.2 - 2026-05-13
 
 - Added `lean_probe_capabilities` and `lean-probe capabilities` to expose

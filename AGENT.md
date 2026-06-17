@@ -1,509 +1,139 @@
 # LeanProbe Agent Guide
 
-This guide is written for coding agents that call the LeanProbe MCP server.
-It describes when to use each tool, what each result means, and how to use
-`feedback_lean` as model-readable Lean feedback.
+LeanProbe gives coding agents fast Lean 4 feedback through a warm
+[LeanInteract](https://github.com/augustepoiroux/LeanInteract) REPL. Use it in
+the inner loop to verify Lean code far faster than `lake build`. LeanProbe never
+edits files; apply accepted code yourself and run `lake build` as the final
+whole-project gate before committing.
 
-## Mental Model
-
-LeanProbe checks Lean code through a warm LeanInteract server. For file-targeted
-tools, it splits a Lean file into:
-
-- a header/import prefix;
-- declaration chunks before the target;
-- the target declaration chunk.
-
-`lean_probe_prepare` elaborates the header and, when a target is supplied, the
-declarations before that target. The returned environment is cached inside the
-MCP server process. `lean_probe_check` and `lean_probe_feedback` then check only
-the target declaration or a full replacement declaration against that prepared
-environment.
-
-For the code chunk it checks, LeanProbe is a real Lean check: `ok=true` means
-Lean accepted that chunk without hard errors and without `sorry`. The scope is
-the supplied chunk plus the prepared environment. Use `lake env lean File.lean`,
-`lake build`, or CI when you need a whole-file or whole-project gate.
-
-Lean declarations inside a `mutual ... end` block are not individually
-targetable. LeanProbe keeps the whole mutual block as one prior-context chunk
-when checking later targets, because Lean elaborates that block as a unit.
-If a requested name is found inside a mutual block, LeanProbe returns
-`error_code="target_not_found"` with a hint explaining that limitation.
-
-Project roots are resolved in this order: explicit `cwd`, then the checked
-file's parent directories, then the MCP server process's current directory. An
-explicit `cwd` must be inside a Lake project; LeanProbe does not fall back when
-that value is invalid.
+The MCP server also advertises a condensed version of this guide in its
+`instructions` field, so a connected agent gets the essentials on connect.
 
 ## Tool Selection
 
 | Tool | Use When | Main Result |
 |---|---|---|
-| `lean_probe_capabilities` | Setup is uncertain, or the agent needs to know the active project, REPL path, and live sessions. | Readiness/degraded state for this server process. |
-| `lean_probe_prepare` | Starting repeated checks in one Lean file, or moving to a later target in the same file. | A cached Lean environment before the target. |
-| `lean_probe_check` | Testing the current declaration or a candidate full replacement declaration. | Fast pass/fail plus Lean messages and optional tactic metadata. |
-| `lean_probe_feedback` | A check failed, or the agent needs proof states, tactic ranges, and annotated Lean context. | Same status fields as check, with tactics and `feedback_lean`. |
-| `lean_probe_state` | Exploring a proof state from standalone Lean code containing `sorry`. | A session id and one proof-state id per `sorry`. |
-| `lean_probe_step` | Trying one tactic against a proof state returned by `lean_probe_state` or a previous step. | New goals/proof state, or `ok=true` if the proof is completed. |
-| `lean_probe_close_state` | Finished with a proof-state session. | Closes the session and releases its LeanInteract process. |
+| `lean_check` | You have a standalone Lean snippet (imports + code) and want to know if it is valid. The default tool. | Diagnostics and `ok` (valid, no `sorry`). |
+| `lean_check_target` | Checking or replacing one named declaration inside a project file; you want the fast warm-environment path. | Pass/fail plus Lean messages; optional tactics/`feedback_lean`. |
+| `lean_status` | Setup is uncertain, or you want to pay cold-start up front. | Readiness (project root, REPL, sessions); `warm=true` boots the REPL. |
+| `lean_proof_state` | Exploring a goal from code containing `sorry`. | A `session_id` and one proof-state id per `sorry`. |
+| `lean_tactic` | Applying one tactic to a proof state. | New goals/proof state, or `ok=true` when Completed. |
+| `lean_close_proof` | Finished with a proof-state session. | Releases the session's REPL process. |
 
-## `lean_probe_capabilities`
+`lean_check` is the low-friction default: no file path or declaration name
+needed. Reach for `lean_check_target` when you are iterating on one declaration
+inside a project file, because it reuses the file's warm prior environment and is
+typically tens of milliseconds after the first call.
 
-Purpose: report whether LeanProbe is ready to run in the current environment.
+## Reading Results
 
-Inputs:
+Every tool returns a JSON object. Read two fields, in order:
 
-- `cwd` (optional): Lean project root or a directory inside it. Leave empty to
-  detect from the MCP server process's current working directory.
+- `success`: did the tool run. `false` means an environment problem (no project
+  root, file not found, timeout, REPL crash). Read `error_code` and `hint` and
+  fix that first; do not interpret it as a Lean result.
+- `ok`: did Lean accept the code. `success=true` with `ok=false` is a real Lean
+  rejection — inspect `messages`. `ok=true` means it elaborated with no errors
+  and no `sorry`; warnings alone do not flip `ok`.
 
-Typical result:
+Scope is the submitted code plus its prepared environment, not the whole
+project, so `lake build` remains the final acceptance gate.
 
-```json
-{
-  "available": true,
-  "project_root": "/path/to/mathlib-project",
-  "repl_dir": "/path/to/mathlib-project/.lake/packages/repl",
-  "active_sessions": [],
-  "code_sessions": [],
-  "max_code_sessions": 16,
-  "degraded_reasons": [],
-  "degraded_codes": []
-}
-```
+Other common fields: `valid_without_sorry`, `has_errors`, `has_sorry`,
+`messages` (with chunk-local `start`/`end` and file-adjusted
+`file_start`/`file_end`), `tactics`, `feedback_lean`, `project_root` (the root
+LeanProbe selected), `elapsed_s`, and `cache`.
 
-Use this when a project does not check as expected, when a client launched the
-server from an unexpected directory, or before a long proof loop in a fresh MCP
-session. `available=false` is a setup signal, not a Lean proof result.
+### `error_code` and `hint`
 
-## Shared Result Fields
+On `success=false`, branch on `error_code` (stable) rather than `error` (free
+text). Every failure also carries a one-line `hint` telling you what to do next.
+Codes: `no_project_root`, `file_not_found`, `target_not_found`,
+`replacement_not_a_declaration`, `lean_interact_unavailable`,
+`lean_interact_start_failed`, `header_failed`, `prior_decl_failed`,
+`dead_server`, `session_dead`, `unknown_session`, `timeout`, `backend_error`.
 
-Most LeanProbe tools return JSON-compatible dictionaries with these fields:
+## Project Root (`cwd`)
 
-- `success`: whether the tool/server call completed. `false` means an
-  infrastructure problem such as missing project root, missing file, timeout, or
-  LeanInteract startup failure.
-- `ok`: whether the Lean-level operation succeeded for this tool. For
-  `check`/`feedback`, this means the checked declaration was accepted without
-  hard errors and without `sorry`.
-- `backend`: always `lean_interact`.
-- `tool`: always `lean_probe`.
-- `action`: `prepare`, `check`, `feedback`, `state`, `step`, or
-  `close_state`.
-- `elapsed_s`: wall-clock seconds measured by LeanProbe for this call.
-- `error`: infrastructure or backend error text. Inspect this first when
-  `success=false`.
-- `error_code`: stable machine-readable failure code, such as
-  `no_project_root`, `file_not_found`, `target_not_found`,
-  `lean_interact_unavailable`, `lean_interact_start_failed`, `header_failed`,
-  `prior_decl_failed`, `dead_server`, `session_dead`, `unknown_session`,
-  `timeout`, or `backend_error`.
-- `timed_out`: true when LeanProbe classified the backend failure as a timeout.
-- `messages`: Lean diagnostics. Each message includes `severity`, `message`,
-  chunk-local `start`/`end`, and file-adjusted `file_start`/`file_end` when a
-  file target is checked.
-- `output`: compact text summary of diagnostics, suitable for logs.
-- `cache`: environment ids and cache metadata. These ids are internal to the
-  live MCP server process and should not be persisted.
+`cwd` is optional. LeanProbe auto-detects the nearest Lake project
+(`lakefile.lean`/`lakefile.toml`) from the file, then from the server's working
+directory. On failure you get `error_code="no_project_root"` and a `hint` naming
+what to pass: set `cwd` to the absolute directory holding the lakefile and retry.
+An explicit `cwd` must be inside a Lake project. `import Mathlib` resolves only
+if that project depends on Mathlib.
 
-LeanProbe caps structured payloads by default: 12 messages, 20 tactics,
-20 sorries, 18 tactics in `feedback_lean`, and 4 feedback entries per source
-line. Long message and goal snippets are truncated before insertion into
-`feedback_lean`.
+## The `replacement` Rule
 
-For `check` and `feedback`, these additional fields matter:
+`replacement` on `lean_check_target` must be a **complete declaration** — the
+full signature **and** body, e.g. `theorem foo : P := by ...`. A bare proof body
+is rejected with `error_code="replacement_not_a_declaration"`. When in doubt,
+pass the whole snippet to `lean_check` instead.
 
-- `valid_without_sorry`: LeanInteract's validity result with `sorry` rejected.
-- `has_errors`: whether Lean reported hard errors.
-- `has_sorry`: whether the checked chunk used `sorry`.
-- `target`: matched declaration name.
-- `target_kind`: declaration kind, such as `theorem`, `lemma`, `def`,
-  `instance`, `class`, `structure`, `inductive`, `abbrev`, `axiom`, `opaque`,
-  `example`, or `mutual`. A `mutual` segment is a context chunk, not an
-  individually named target.
-- `target_range`: source-file line range for the target declaration.
-- `tactics`: tactic text, ranges, goals, proof-state ids, and used constants.
-- `feedback_lean`: checked Lean declaration with inline feedback comments.
+## Latency
 
-Interpretation rules:
-
-- If `success=false`, fix the tool/project problem before interpreting Lean
-  diagnostics. Use `error_code` for routing and `error` for human-readable
-  detail.
-- If `success=true` and `ok=false`, LeanProbe ran successfully and Lean rejected
-  the checked code or found `sorry`.
-- Warnings do not make `ok=false` unless they are accompanied by hard errors or
-  `sorry`.
-- `start`/`end` positions are local to the checked chunk. `file_start`/`file_end`
-  are adjusted back to the original file when LeanProbe knows the target range.
+The first call after startup pays cold-start (REPL boot plus import
+elaboration; tens of seconds for Mathlib). Allow a generous client timeout on
+the first call, or call `lean_status` with `warm=true` once to pre-boot.
+Subsequent `lean_check_target` calls on the same file reuse the warm environment.
+Proof-state and session ids live only inside the running server process;
+recreate them after a restart.
 
 ## `feedback_lean`
 
-`feedback_lean` is intended as model-readable context for the next attempt. It
-is not a patch that should normally be saved back to the Lean source.
+`lean_check_target` with `with_feedback=true` (and any result that includes
+tactics) returns `feedback_lean`: the checked Lean with compact inline comments
+carrying diagnostics and proof states. It is model-readable context for the next
+attempt, not a patch to save back to source.
 
-LeanProbe inserts Lean block comments before relevant lines:
+Each diagnostic is one `-- <glyph> <severity>: <message>` line above the
+relevant source line (`✗` error, `⚠` warning, `ℹ` info); each proof state is a
+`-- goal: <state>` line. There is no block-comment wrapper, and a goal that is
+already shown inside an error on the same line is omitted as redundant.
 
 ```lean
-/- <feedback>
--- proof state: x y : Nat ⊢ x + y = y + x
-</feedback> -/
+-- goal: x y : Nat ⊢ x + y = y + x
 theorem add_comm_candidate (x y : Nat) : x + y = y + x := by
-  /- <feedback>
-  -- type: error, msg: unsolved goals
-  </feedback> -/
+  -- ✗ error: unsolved goals x y : Nat ⊢ y + x = y + x
+  rw [Nat.add_comm]
+  -- ⚠ warning: this tactic is never executed
   rfl
 ```
 
-Feedback blocks can contain:
-
-- diagnostic messages with severity and message text;
-- tactic proof states and goals near the tactic that produced them;
-- indentation that matches the surrounding Lean line.
-
-The annotation is intentionally compact. Long diagnostics and large proof
-states are truncated before insertion. For the raw structured data, read
-`messages` and `tactics` directly.
-
-## `lean_probe_prepare`
-
-Purpose: warm the Lean environment for a file, optionally through all
-declarations before a target.
-
-Inputs:
-
-- `file_path` (required): absolute path or path relative to `cwd`/project root.
-- `theorem_id` (optional): target declaration name. Qualified and unqualified
-  names are accepted when they match the segmented file.
-- `cwd` (optional): Lean/Lake project root or a path inside the project.
-- `timeout_s` (optional, default `60`): LeanInteract timeout.
-
-Typical call:
-
-```json
-{
-  "file_path": "examples/lean/number_theory_nat.lean",
-  "theorem_id": "nat_mul_pos_bench",
-  "cwd": "/path/to/mathlib-project"
-}
-```
-
-Typical successful result:
-
-```json
-{
-  "success": true,
-  "ok": true,
-  "action": "prepare",
-  "target": "nat_mul_pos_bench",
-  "elapsed_s": 1.234,
-  "cache": {
-    "header_env": 4,
-    "env_before": 9,
-    "cache_hit": false
-  }
-}
-```
-
-Use this before repeated checks of the same target. `lean_probe_check` can
-prepare on demand, but an explicit prepare call makes startup and cache costs
-visible.
-
-## `lean_probe_check`
-
-Purpose: check one target declaration quickly against the cached environment
-before that target.
-
-Inputs:
-
-- `file_path` (required): Lean source file.
-- `theorem_id` (required): target declaration name.
-- `replacement` (optional): full replacement declaration chunk. If omitted,
-  LeanProbe checks the target declaration currently in the file.
-- `include_tactics` (optional, default `false`): request tactic metadata.
-- `cwd` and `timeout_s`: same meaning as `prepare`.
-
-The `replacement` must be a complete Lean declaration or equivalent chunk, not
-only a proof body. It should include the theorem/lemma/def signature and proof.
-
-Typical call:
-
-```json
-{
-  "file_path": "examples/lean/number_theory_nat.lean",
-  "theorem_id": "nat_mul_pos_bench",
-  "cwd": "/path/to/mathlib-project",
-  "replacement": "theorem nat_mul_pos_bench (a b : Nat) (ha : 0 < a) (hb : 0 < b) : 0 < a * b := by\n  exact Nat.mul_pos ha hb"
-}
-```
-
-Typical success:
-
-```json
-{
-  "success": true,
-  "ok": true,
-  "action": "check",
-  "target": "nat_mul_pos_bench",
-  "valid_without_sorry": true,
-  "has_errors": false,
-  "has_sorry": false,
-  "elapsed_s": 0.018,
-  "messages": [],
-  "feedback_lean": ""
-}
-```
-
-Typical Lean failure:
-
-```json
-{
-  "success": true,
-  "ok": false,
-  "action": "check",
-  "target": "nat_mul_pos_bench",
-  "valid_without_sorry": false,
-  "has_errors": true,
-  "has_sorry": false,
-  "output": "error: ...",
-  "messages": [
-    {
-      "severity": "error",
-      "message": "...",
-      "start": {"line": 2, "column": 2},
-      "file_start": {"line": 8, "column": 2}
-    }
-  ]
-}
-```
-
-On failure, `lean_probe_check` may rerun internally with tactic collection so
-the response can include `tactics` and `feedback_lean`.
-
-## `lean_probe_feedback`
-
-Purpose: run a target check with tactic collection and return model-readable
-feedback.
-
-Inputs:
-
-- `file_path`, `theorem_id`, `replacement`, `cwd`, `timeout_s`: same meaning as
-  `lean_probe_check`.
-
-Use this when:
-
-- `lean_probe_check` returns `ok=false` and the diagnostic summary is not enough;
-- the next candidate should be guided by local proof states;
-- the next attempt needs annotated Lean context.
-
-Typical result fields:
-
-```json
-{
-  "success": true,
-  "ok": false,
-  "action": "feedback",
-  "target": "nat_mul_pos_bench",
-  "messages": [{ "severity": "error", "message": "..." }],
-  "tactics": [
-    {
-      "tactic": "exact ...",
-      "goals": "...",
-      "proof_state": 12,
-      "file_start": {"line": 9, "column": 2},
-      "used_constants": []
-    }
-  ],
-  "feedback_lean": "/- <feedback>\\n-- type: error, msg: ...\\n</feedback> -/\\n..."
-}
-```
-
-`feedback` is usually more expensive than `check` because it asks LeanInteract
-for tactic metadata. Prefer `check` for ordinary candidate loops and call
-`feedback` when richer context is needed.
-
-## `lean_probe_state`
-
-Purpose: create proof states from standalone Lean code containing `sorry`.
-
-Inputs:
-
-- `code` (required): Lean code. Include imports and local context if needed.
-- `cwd` (optional): Lean project root for imports and project dependencies.
-- `include_tactics` (optional, default `false`): include tactic metadata from
-  the command response.
-- `timeout_s` (optional, default `60`): LeanInteract timeout.
-
-Typical call:
-
-```json
-{
-  "cwd": "/path/to/mathlib-project",
-  "code": "import Mathlib\n\ntheorem ex (n : Nat) : n = n := by\n  sorry"
-}
-```
-
-Typical result:
-
-```json
-{
-  "success": true,
-  "ok": true,
-  "action": "state",
-  "session_id": "6b276d6f-1c0b-42a3-8f7b-0f59aab26742",
-  "has_errors": false,
-  "sorries": [
-    {
-      "goal": "n : Nat\n⊢ n = n",
-      "proof_state": 3,
-      "start": {"line": 4, "column": 2}
-    }
-  ]
-}
-```
-
-For this tool, `ok=true` means LeanProbe successfully extracted at least one
-proof state from a `sorry` and found no hard errors. It does not mean the proof
-is complete.
-
-The `session_id` is held in memory by the running MCP server. If the server
-restarts, create a new state session.
-LeanProbe keeps a bounded LRU cache of proof-state sessions. Close sessions
-explicitly with `lean_probe_close_state` when tactic exploration is finished.
-
-MCP server configuration can be supplied through environment variables:
-`LEAN_PROBE_LAKE_PATH`, `LEAN_PROBE_LOCAL_REPL_PATH`,
-`LEAN_PROBE_AUTO_BUILD`, and `LEAN_PROBE_VERBOSE`.
-
-LeanProbe serializes public operations with an internal lock. Treat one
-LeanProbe/MCP server process as a serialized checker, not as a throughput pool
-for independent concurrent checks.
-
-## `lean_probe_step`
-
-Purpose: apply one tactic to a proof state.
-
-Inputs:
-
-- `session_id` (required): value returned by `lean_probe_state`.
-- `proof_state` (required): proof-state id from `state.sorries[*].proof_state`
-  or a previous `lean_probe_step` result.
-- `tactic` (required): one Lean tactic string, such as `rfl`, `omega`, or
-  `exact h`.
-- `timeout_s` (optional, default `60`): LeanInteract timeout.
-
-Typical call:
-
-```json
-{
-  "session_id": "6b276d6f-1c0b-42a3-8f7b-0f59aab26742",
-  "proof_state": 3,
-  "tactic": "rfl"
-}
-```
-
-Typical completed result:
-
-```json
-{
-  "success": true,
-  "ok": true,
-  "action": "step",
-  "proof_status": "Completed",
-  "goals": [],
-  "elapsed_s": 0.012
-}
-```
-
-Typical incomplete result:
-
-```json
-{
-  "success": true,
-  "ok": false,
-  "action": "step",
-  "proof_status": "Incomplete",
-  "proof_state": 7,
-  "goals": ["..."]
-}
-```
-
-When `ok=false` and `success=true`, use the returned `proof_state` and `goals`
-to decide the next tactic.
-
-If `lean_probe_step` returns `error_code="session_dead"` and
-`session_dead=true`, create a fresh proof state with `lean_probe_state`.
-
-## `lean_probe_close_state`
-
-Purpose: close a proof-state session created by `lean_probe_state`.
-
-Inputs:
-
-- `session_id` (required): value returned by `lean_probe_state`.
-
-Typical result:
-
-```json
-{
-  "success": true,
-  "ok": true,
-  "action": "close_state",
-  "session_id": "6b276d6f-1c0b-42a3-8f7b-0f59aab26742"
-}
-```
-
-Use this when tactic exploration for that proof state is finished.
+Long diagnostics and proof states are truncated; read `messages` and `tactics`
+for the raw structured data.
 
 ## Recommended Workflows
 
-### Repeated Candidate Checks For One Declaration
+### Iterating on one declaration
 
-1. If setup is uncertain, call `lean_probe_capabilities` with `cwd`.
-2. Call `lean_probe_prepare` with `file_path`, `cwd`, and `theorem_id`.
-3. For each candidate, call `lean_probe_check` with a complete replacement
-   declaration.
-4. If `ok=false`, inspect `output` and `messages`.
-5. If the next edit is not clear from the diagnostics, call
-   `lean_probe_feedback` and pass `feedback_lean` plus structured
-   `messages`/`tactics` into the next attempt.
-6. After accepting and writing a candidate to disk, run a whole-file or
-   whole-project command when that larger scope matters.
+1. If setup is uncertain, call `lean_status` with `cwd`.
+2. Call `lean_check_target` with `file` and `name` for each candidate
+   `replacement` (a complete declaration).
+3. On `ok=false`, inspect `messages`; if that is not enough, retry with
+   `with_feedback=true` and feed `feedback_lean` + `messages` into the next try.
+4. After writing accepted code to disk, run `lake build` for whole-project scope.
 
-### Sequential Same-File Work
+### Checking an ad-hoc snippet
 
-1. Work in source order when possible.
-2. Prepare/check the first target.
-3. If a replacement is accepted and future declarations should see it, write the
-   accepted declaration to the file before checking later targets.
-4. Call `lean_probe_prepare` or `lean_probe_check` for the next target. The
-   server will reuse the header and valid prior-declaration checkpoints whose
-   text has not changed.
+1. Call `lean_check` with the full snippet (include the imports it needs).
+2. Read `ok`; on failure inspect `messages`.
 
-If imports, options, namespaces, or earlier declarations change, LeanProbe will
-rebuild the affected environment. If the LeanInteract server dies, LeanProbe
-tries to restart it and report the error if restart fails.
+### Tactic exploration
 
-### Tactic Exploration
+1. `lean_proof_state` with a snippet containing `sorry`.
+2. `lean_tactic` with one tactic against a returned proof-state id; repeat until
+   `proof_status="Completed"`, or rewrite the declaration and `lean_check_target`.
+3. `lean_close_proof` when finished. If `error_code="session_dead"`, call
+   `lean_proof_state` again.
 
-1. Call `lean_probe_state` with a small Lean snippet containing `sorry`.
-2. Pick a proof-state id from `sorries`.
-3. Call `lean_probe_step` with one tactic.
-4. Continue with the returned proof-state id until `proof_status` is
-   `Completed`, or use the goals to rewrite the full declaration and check it
-   with `lean_probe_check`.
-5. Call `lean_probe_close_state` when the tactic session is no longer needed.
-
-## Operational Rules Snippet
-
-For tool-using systems, these are the core operating rules:
+## Operating Rules Snippet
 
 ```text
-Use lean_probe_prepare before repeated checks in a Lean file. Use
-lean_probe_check with a complete replacement declaration, not only a proof body.
-Treat success=false as a tool/project problem. Treat success=true, ok=false as a
-Lean result and inspect messages/output. Call lean_probe_feedback when proof
-states or annotated feedback_lean would help the next edit. For final file or
-project scope, run lake env lean, lake build, or CI after writing accepted code.
-Call lean_probe_capabilities first when cwd, LeanInteract availability, or REPL
-selection is unclear.
+Default to lean_check for any standalone Lean snippet. Use lean_check_target with
+a COMPLETE replacement declaration (signature + body), not a bare proof body, for
+fast repeated checks of a project file. Treat success=false as an environment
+problem (read error_code + hint); treat success=true, ok=false as a Lean
+rejection and inspect messages. cwd is optional and auto-detected; on
+no_project_root pass cwd=<dir with lakefile>. The first call is slow (cold REPL);
+call lean_status warm=true to pre-boot. Run lake build as the final gate.
 ```

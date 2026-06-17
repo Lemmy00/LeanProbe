@@ -14,10 +14,12 @@ acceptance.
 
 ## MCP Tools
 
-LeanProbe exposes the MCP server name `lean-probe` and the tools
-`lean_probe_capabilities`, `lean_probe_prepare`, `lean_probe_check`,
-`lean_probe_feedback`, `lean_probe_state`, `lean_probe_step`, and
-`lean_probe_close_state`.
+LeanProbe exposes the MCP server name `lean-probe` and the tools `lean_check`
+(verify any standalone snippet — the default), `lean_check_target` (check or
+replace one declaration in a project file), `lean_status` (readiness and
+warm-up), `lean_proof_state`, `lean_tactic`, and `lean_close_proof`. On connect
+the server advertises usage `instructions` and reports its real version in
+`serverInfo`, so a connected agent gets the essentials immediately.
 
 For MCP parameter details, result-field semantics, and `feedback_lean` examples,
 see [AGENT.md](AGENT.md).
@@ -119,7 +121,7 @@ Check the Python package and CLI:
 
 ```bash
 python -c "import lean_probe, lean_interact; print('ok')"
-lean-probe --version  # lean-probe 0.2.2
+lean-probe --version  # lean-probe 0.3.0
 ```
 
 Check that Lean/Lake are visible:
@@ -133,7 +135,7 @@ Run LeanProbe by pointing `--cwd` at a Lake project that can import the
 dependencies used by the file being checked:
 
 ```bash
-lean-probe check examples/lean/number_theory_nat.lean nat_mul_pos_bench \
+lean-probe check-target examples/lean/number_theory_nat.lean nat_mul_pos_bench \
   --cwd /path/to/mathlib-lake-project \
   --pretty
 ```
@@ -158,18 +160,19 @@ repository with `python -m pytest -q`.
 ## CLI
 
 ```bash
-lean-probe prepare /path/to/File.lean --cwd /path/to/lake-project --theorem-id my_theorem
+lean-probe status --cwd /path/to/lake-project --pretty
 
-lean-probe capabilities --cwd /path/to/lake-project --pretty
+lean-probe check --cwd /path/to/lake-project \
+  --code "import Mathlib"$'\n'"example : True := trivial"
 
-lean-probe check /path/to/File.lean my_theorem \
+lean-probe check-target /path/to/File.lean my_theorem \
   --cwd /path/to/lake-project \
   --replacement-file /tmp/candidate.lean \
   --pretty
 
-lean-probe feedback /path/to/File.lean my_theorem \
+lean-probe check-target /path/to/File.lean my_theorem \
   --cwd /path/to/lake-project \
-  --pretty
+  --with-feedback --pretty
 ```
 
 Benchmark commands are documented in [BENCHMARKS.md](BENCHMARKS.md).
@@ -246,12 +249,12 @@ the Lean project from a terminal before using LeanProbe. Some Lean/Lake build
 commands print progress to stdout; stdout is reserved for MCP JSON-RPC frames,
 so build output can corrupt the transport.
 
-Use `lean_probe_capabilities` when setup is uncertain. Use
-`lean_probe_prepare` before repeated checks in the same file, then call
-`lean_probe_check` for concrete target declarations or replacements. When
-ordinary diagnostics are not enough, call `lean_probe_feedback` and inspect
-`messages`, `tactics`, and `feedback_lean`. See [AGENT.md](AGENT.md) for the
-full MCP contract.
+Call `lean_check` to verify any standalone Lean snippet (the default tool). Use
+`lean_check_target` for fast repeated checks of one declaration in a project
+file, passing a complete `replacement` declaration to screen a candidate; set
+`with_feedback=true` for proof states and annotated `feedback_lean`. Call
+`lean_status` when setup is uncertain or to warm the REPL. See
+[AGENT.md](AGENT.md) for the full MCP contract.
 
 ## Benchmarks
 
@@ -279,11 +282,12 @@ per-target rows, and reproduction commands, see [BENCHMARKS.md](BENCHMARKS.md).
 
 ## Output Shape
 
-`lean_probe_check` and `lean_probe_feedback` return JSON-compatible dictionaries:
+`lean_check` and `lean_check_target` return JSON-compatible dictionaries:
 
 - `success`: false for tool/project/backend failures;
-- `ok`: true only when Lean accepts the target without `sorry`;
+- `ok`: true only when Lean accepts the code without errors and without `sorry`;
 - `error_code`: stable machine-readable failure code when `success=false`;
+- `hint`: one-line next-action guidance accompanying any failure;
 - `timed_out`: true when the backend failure was classified as a timeout;
 - `messages`: Lean diagnostics with both chunk-local and file-global positions;
 - `tactics`: tactic text, ranges, goals, proof states, and used constants;
@@ -292,9 +296,11 @@ per-target rows, and reproduction commands, see [BENCHMARKS.md](BENCHMARKS.md).
 - `elapsed_s`: wall-clock time for the check.
 
 Current `error_code` values include `no_project_root`, `file_not_found`,
-`target_not_found`, `lean_interact_unavailable`, `lean_interact_start_failed`,
-`header_failed`, `prior_decl_failed`, `dead_server`, `session_dead`,
-`unknown_session`, `timeout`, and `backend_error`.
+`target_not_found`, `replacement_not_a_declaration`, `lean_interact_unavailable`,
+`lean_interact_start_failed`, `header_failed`, `prior_decl_failed`,
+`dead_server`, `session_dead`, `unknown_session`, `timeout`, and
+`backend_error`. Every failure payload also carries a one-line `hint` describing
+the next action.
 
 See [AGENT.md](AGENT.md) for the complete MCP output contract, including
 `success` versus `ok`, proof-state stepping, and `feedback_lean`.
