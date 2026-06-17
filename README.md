@@ -22,7 +22,7 @@ the server advertises usage `instructions` and reports its real version in
 `serverInfo`, so a connected agent gets the essentials immediately.
 
 For MCP parameter details, result-field semantics, and `feedback_lean` examples,
-see [AGENT.md](AGENT.md).
+see [AGENTS.md](AGENTS.md).
 
 ## Why It Is Faster
 
@@ -92,21 +92,23 @@ Required:
 - A built Lean project, or `--auto-build` when you want LeanInteract to build it
   before checking.
 
-Install the CLI and Python package:
+Install the package — the CLI, Python API, and MCP server are all included:
 
 ```bash
-python -m pip install lean-probe
+python -m pip install lean-probe        # everything, MCP server included
 ```
 
-That command installs the required Python runtime dependencies. If
-`python -c "import lean_probe, lean_interact"` fails, run the install command in
+No-install options for running the MCP server:
+
+```bash
+uvx lean-probe mcp                      # ephemeral, via uv
+pipx install lean-probe                 # isolated global install, then `lean-probe mcp`
+```
+
+The MCP server ships in the base package as of 0.3.1 — no extra needed. (The
+`lean-probe[mcp]` extra still installs as a no-op so older configs keep working.)
+If `python -c "import lean_probe, lean_interact, mcp"` fails, run the install in
 the same Python environment that will launch LeanProbe.
-
-Install MCP support when you want to run the MCP server:
-
-```bash
-python -m pip install "lean-probe[mcp]"
-```
 
 Editable checkout for development:
 
@@ -121,7 +123,7 @@ Check the Python package and CLI:
 
 ```bash
 python -c "import lean_probe, lean_interact; print('ok')"
-lean-probe --version  # lean-probe 0.3.0
+lean-probe --version  # lean-probe 0.3.1
 ```
 
 Check that Lean/Lake are visible:
@@ -214,20 +216,32 @@ Run the MCP server over stdio:
 lean-probe mcp
 ```
 
-Example MCP configuration:
+On connect it advertises usage `instructions` and its version, and exposes six
+tools: `lean_check`, `lean_check_target`, `lean_status`, `lean_proof_state`,
+`lean_tactic`, and `lean_close_proof`.
 
-```json
-{
-  "mcpServers": {
-    "lean-probe": {
-      "command": "lean-probe",
-      "args": ["mcp"]
-    }
-  }
-}
+### Add it to a client
+
+**Claude Code** (one command):
+
+```bash
+claude mcp add lean-probe --env LEAN_PROBE_AUTO_BUILD=0 -- lean-probe mcp
 ```
 
-Example MCP configuration with LeanProbe environment variables:
+**Codex** (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.lean-probe]
+command = "lean-probe"
+args = ["mcp"]
+startup_timeout_sec = 60
+tool_timeout_sec = 600          # the first Mathlib call is slow (cold REPL)
+
+[mcp_servers.lean-probe.env]
+LEAN_PROBE_AUTO_BUILD = "0"
+```
+
+**Any MCP client** (generic `mcpServers` JSON):
 
 ```json
 {
@@ -235,26 +249,32 @@ Example MCP configuration with LeanProbe environment variables:
     "lean-probe": {
       "command": "lean-probe",
       "args": ["mcp"],
-      "env": {
-        "LEAN_PROBE_LAKE_PATH": "/opt/homebrew/bin/lake",
-        "LEAN_PROBE_AUTO_BUILD": "0"
-      }
+      "env": { "LEAN_PROBE_AUTO_BUILD": "0" }
     }
   }
 }
 ```
 
-For stdio MCP clients such as Codex, keep `LEAN_PROBE_AUTO_BUILD=0` and build
-the Lean project from a terminal before using LeanProbe. Some Lean/Lake build
-commands print progress to stdout; stdout is reserved for MCP JSON-RPC frames,
-so build output can corrupt the transport.
+If the client launches the server outside your activated environment, use an
+absolute command path (e.g. `/path/to/.venv/bin/lean-probe`) or `uvx`
+(`"command": "uvx", "args": ["lean-probe", "mcp"]`). `lake` must be on `PATH` or
+set with `LEAN_PROBE_LAKE_PATH`.
 
-Call `lean_check` to verify any standalone Lean snippet (the default tool). Use
-`lean_check_target` for fast repeated checks of one declaration in a project
-file, passing a complete `replacement` declaration to screen a candidate; set
-`with_feedback=true` for proof states and annotated `feedback_lean`. Call
-`lean_status` when setup is uncertain or to warm the REPL. See
-[AGENT.md](AGENT.md) for the full MCP contract.
+### Notes
+
+- `cwd` is optional and auto-detected from the file/working directory. If the
+  server starts outside a Lake project, pass `cwd` to the tools — a failed
+  detection returns `error_code="no_project_root"` with a `hint`.
+- Keep `LEAN_PROBE_AUTO_BUILD=0` for stdio clients and build the project from a
+  terminal first: build output on stdout can corrupt the JSON-RPC transport.
+- The first call boots the REPL (tens of seconds for Mathlib); call
+  `lean_status` with `warm=true` once, or allow a generous client tool timeout.
+
+Call `lean_check` to verify any standalone Lean snippet (the default tool); use
+`lean_check_target` for fast repeated checks of a declaration in a project file,
+with a complete `replacement` to screen a candidate and `with_feedback=true` for
+proof states and annotated `feedback_lean`. See [AGENTS.md](AGENTS.md) for the
+full MCP contract.
 
 ## Benchmarks
 
@@ -302,7 +322,7 @@ Current `error_code` values include `no_project_root`, `file_not_found`,
 `backend_error`. Every failure payload also carries a one-line `hint` describing
 the next action.
 
-See [AGENT.md](AGENT.md) for the complete MCP output contract, including
+See [AGENTS.md](AGENTS.md) for the complete MCP output contract, including
 `success` versus `ok`, proof-state stepping, and `feedback_lean`.
 
 Declarations inside `mutual ... end` blocks are included as prior context for

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lean-probe"
-version = "0.3.0"
+version = "0.3.1"
 description = "Fast Lean 4 proof feedback for agents, powered by LeanInteract."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,11 +24,14 @@ classifiers = [
 ]
 dependencies = [
   "lean-interact>=0.11.0,<1",
+  "mcp>=1.2.0,<2",
 ]
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.2.0,<2"]
-dev = ["build", "mcp>=1.2.0,<2", "mypy", "pre-commit", "pytest", "pytest-xdist", "ruff", "twine"]
+# `mcp` is a core dependency as of 0.3.1; this extra is kept as a no-op so existing
+# `pip install 'lean-probe[mcp]'` commands and configs keep working.
+mcp = []
+dev = ["build", "mypy", "pre-commit", "pytest", "pytest-xdist", "ruff", "twine"]
 
 [project.scripts]
 lean-probe = "lean_probe.cli:main"

@@ -180,6 +180,6 @@ def test_shutdown_handler_registration_is_repeatable(monkeypatch):
 
 
 def test_agent_tool_table_matches_public_mcp_names():
-    agent_md = (Path(__file__).resolve().parents[1] / "AGENT.md").read_text(encoding="utf-8")
+    agent_md = (Path(__file__).resolve().parents[1] / "AGENTS.md").read_text(encoding="utf-8")
     names = re.findall(r"\| `(lean_[a-z_]+)` \|", agent_md)
     assert names == TOOL_NAMES

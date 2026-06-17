@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.1 - 2026-06-17
+
+- The MCP server is now part of the base install: `mcp` moved from the `[mcp]`
+  extra into the core dependencies. `pip install lean-probe`, `uvx lean-probe mcp`,
+  and `claude mcp add … -- lean-probe mcp` work with no extra. The `[mcp]` extra is
+  kept as a no-op so existing commands/configs keep working.
+- Renamed `AGENT.md` to `AGENTS.md` (the recognized convention) and split it into
+  "Using LeanProbe" (the agent/MCP contract) and "Working on this repo" (contributor
+  setup, checks, module layout, release).
+- README: frictionless install + copy-paste MCP setup for Claude Code, Codex, and
+  generic clients.
+
 ## 0.3.0 - 2026-06-17
 
 Agent-integration redesign of the MCP surface (breaking). The MCP server now
