@@ -443,9 +443,7 @@ class LeanProbe:
                     "timed_out": error_code == ErrorCode.TIMEOUT,
                     "error_code": ErrorCode.SESSION_DEAD if session_dead else error_code,
                     "session_dead": session_dead,
-                    "hint": hint_for_code(ErrorCode.SESSION_DEAD)
-                    if session_dead
-                    else hint_for_code(error_code),
+                    "hint": hint_for_code(ErrorCode.SESSION_DEAD) if session_dead else hint_for_code(error_code),
                     "error": str(exc),
                     "elapsed_s": round(time.perf_counter() - start, 3),
                 }

@@ -60,7 +60,7 @@ SERVER_INSTRUCTIONS = (
     "\n"
     "PROJECT ROOT (cwd) is OPTIONAL: LeanProbe auto-detects the nearest Lake project\n"
     "(lakefile.lean/lakefile.toml) from the file, then from the server's working directory.\n"
-    "If detection fails you get success=false, error_code=\"no_project_root\", and a `hint`\n"
+    'If detection fails you get success=false, error_code="no_project_root", and a `hint`\n'
     "naming what to pass — set cwd to the absolute directory holding the lakefile and retry.\n"
     "An explicit cwd MUST be inside a Lake project. `import Mathlib` resolves only if that\n"
     "project depends on Mathlib.\n"
@@ -75,7 +75,7 @@ SERVER_INSTRUCTIONS = (
     "\n"
     "REPLACEMENT must be a COMPLETE declaration (full signature AND body), e.g.\n"
     "'theorem foo : P := by ...', never a bare proof body. A bare body is rejected with\n"
-    "error_code=\"replacement_not_a_declaration\". When in doubt, use lean_check on the\n"
+    'error_code="replacement_not_a_declaration". When in doubt, use lean_check on the\n'
     "whole snippet.\n"
     "\n"
     "LATENCY: the first call after startup pays cold-start (REPL boot + imports; tens of\n"
@@ -109,9 +109,7 @@ Replacement = Annotated[
 ]
 WithFeedback = Annotated[
     bool,
-    ParamField(
-        description="When true, include tactic proof states and an annotated `feedback_lean` block (slower)."
-    ),
+    ParamField(description="When true, include tactic proof states and an annotated `feedback_lean` block (slower)."),
 ]
 TimeoutS = Annotated[
     int,

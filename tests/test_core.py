@@ -108,7 +108,9 @@ def test_feedback_lean_is_compact_indented_and_truncated():
 
 def test_feedback_lean_drops_goal_already_shown_in_error():
     text = "theorem demo (n : Nat) : n = n + 1 := by\n  rfl\n"
-    messages = [{"severity": "error", "message": "unsolved goals n : Nat ⊢ n = n + 1", "start": {"line": 2, "column": 2}}]
+    messages = [
+        {"severity": "error", "message": "unsolved goals n : Nat ⊢ n = n + 1", "start": {"line": 2, "column": 2}}
+    ]
     tactics = [{"goals": "n : Nat ⊢ n = n + 1", "start": {"line": 2, "column": 2}}]
     feedback = payloads._feedback_lean(text, messages, tactics)
     # The goal is already contained in the error message, so no separate goal line.
@@ -156,12 +158,12 @@ def test_looks_like_declaration_guard():
 
 
 def test_capabilities_reports_degraded_codes(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        LeanProbe, "_resolve_project_root", lambda self, cwd, file_path=None: None
-    )
+    monkeypatch.setattr(LeanProbe, "_resolve_project_root", lambda self, cwd, file_path=None: None)
     from lean_probe import sessions
 
-    monkeypatch.setattr(sessions, "_import_lean_interact", lambda: (None, None, None, None, None, "lean-interact unavailable: missing"))
+    monkeypatch.setattr(
+        sessions, "_import_lean_interact", lambda: (None, None, None, None, None, "lean-interact unavailable: missing")
+    )
     probe = LeanProbe()
     payload = probe.capabilities(tmp_path)
     assert payload["available"] is False
@@ -197,14 +199,21 @@ def test_check_target_reuses_header_and_prior_declaration_env(fake_backend, lean
     assert second["cache"]["cache_hit"] is True
     assert first["project_root"] == str(project)
     cmds = [run["cmd"].strip().splitlines()[0] for run in state["servers"][0].runs]
-    assert cmds == ["import Mathlib", "theorem first : True := by", "theorem second : True := by", "theorem second : True := by"]
+    assert cmds == [
+        "import Mathlib",
+        "theorem first : True := by",
+        "theorem second : True := by",
+        "theorem second : True := by",
+    ]
 
 
 def test_check_target_reports_chunk_and_file_locations_on_failure(fake_backend, lean_project):
     state = fake_backend()
     project, target = lean_project("import Mathlib\n\ntheorem demo : True := by\n  trivial\n")
     probe = LeanProbe()
-    payload = probe.check_target(target, theorem_id="demo", cwd=project, replacement="theorem demo : True := by\n  bad\n")
+    payload = probe.check_target(
+        target, theorem_id="demo", cwd=project, replacement="theorem demo : True := by\n  bad\n"
+    )
     assert payload["success"] is True
     assert payload["ok"] is False
     assert payload["has_errors"] is True

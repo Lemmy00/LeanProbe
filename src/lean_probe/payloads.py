@@ -48,7 +48,9 @@ def _clean_message_text(text: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _message_payloads(response: Any, *, line_offset: int = 0, limit: int = DEFAULT_MESSAGE_LIMIT) -> list[dict[str, Any]]:
+def _message_payloads(
+    response: Any, *, line_offset: int = 0, limit: int = DEFAULT_MESSAGE_LIMIT
+) -> list[dict[str, Any]]:
     payloads = []
     for message in list(getattr(response, "messages", []) or [])[:limit]:
         text = _clean_message_text(str(getattr(message, "data", "") or ""))
