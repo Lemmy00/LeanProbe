@@ -92,6 +92,59 @@ def test_cli_proof_state_reads_stdin(fake_backend, lean_project, monkeypatch, ca
     assert output["session_id"]
 
 
+def test_cli_install_skill_print_outputs_skill(capsys):
+    code = cli.main(["install-skill", "--print"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "name: lean-probe" in out
+    assert "lean_check" in out
+
+
+def test_cli_install_skill_writes_into_home(tmp_path, capsys):
+    (tmp_path / ".codex").mkdir()
+    code = cli.main(["install-skill", "--home", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert code == 0
+    skill_file = tmp_path / ".codex" / "skills" / "lean-probe" / "SKILL.md"
+    assert skill_file.is_file()
+    assert "codex" in out and "created" in out
+
+
+def test_cli_install_skill_into_explicit_dir(tmp_path, capsys):
+    from lean_probe import skills
+
+    root = tmp_path / "root"
+    code = cli.main(["install-skill", "--skills-dir", str(root)])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "dir" in out
+    assert (root / "lean-probe" / "SKILL.md").read_text(encoding="utf-8") == skills.read_skill_text()
+
+
+def test_cli_install_skill_named_client_creates_missing_home(tmp_path, capsys):
+    # No ~/.codex pre-created: an explicit --client must create it anyway.
+    code = cli.main(["install-skill", "--home", str(tmp_path), "--client", "codex"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert (tmp_path / ".codex" / "skills" / "lean-probe" / "SKILL.md").is_file()
+    assert "codex" in out and "created" in out
+
+
+def test_cli_install_skill_dry_run_writes_nothing(tmp_path, capsys):
+    code = cli.main(["install-skill", "--home", str(tmp_path), "--client", "claude", "--dry-run"])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "[dry-run]" in out
+    assert not (tmp_path / ".claude").exists()
+
+
+def test_cli_install_skill_no_targets_exits_one(tmp_path, capsys):
+    code = cli.main(["install-skill", "--home", str(tmp_path)])
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "No Claude Code or Codex" in err
+
+
 def test_cli_version_uses_package_version(capsys):
     try:
         cli.main(["--version"])

@@ -31,6 +31,24 @@ Now ask the agent to check Lean — e.g. *"use lean_check on `theorem t : 2 + 2 
 lean-probe check --cwd /path/to/lake-project --code "example : 2 + 2 = 4 := rfl"
 ```
 
+That is the whole regular setup — `pip install lean-probe` is fully functional on
+its own and writes nothing outside its own package.
+
+**Optional — install the usage skill.** So your agents know the LeanProbe tool
+contract without you pasting it, you can additionally install it as a skill. It
+ships inside the wheel (no repo clone), and this step is purely opt-in — a plain
+`pip install` never touches `~/.claude` or `~/.codex`:
+
+```bash
+lean-probe install-skill        # → ~/.claude/skills + ~/.codex/skills (whichever exist)
+```
+
+This drops the [LeanProbe skill](src/lean_probe/skill/SKILL.md) into each present
+client as `skills/lean-probe/SKILL.md`. Use `--client claude|codex` to force one,
+`--skills-dir PATH` for a project-local `.claude/skills`, or `--dry-run` to preview.
+The skill only documents the tools — keep the `claude mcp add` / Codex config above
+so the `lean-probe` MCP server is actually connected.
+
 ## Requirements
 
 - Python 3.10+.
@@ -84,8 +102,8 @@ On connect the server advertises usage `instructions` and exposes six tools:
 
 Read a result with two fields: **`success`** = the tool ran; **`ok`** = Lean
 accepted the code (no errors, no `sorry`). On failure, `error_code` + `hint` say
-what to do next. See [AGENTS.md](AGENTS.md) for the full contract — parameters,
-`feedback_lean`, and every error code.
+what to do next. See the [LeanProbe skill](src/lean_probe/skill/SKILL.md) for the
+full contract — parameters, `feedback_lean`, and every error code.
 
 ## Without MCP
 
@@ -114,7 +132,8 @@ full-file Lake check — about 9–14× faster for sequential same-file work. Se
 
 ## More
 
-- [AGENTS.md](AGENTS.md) — the full MCP contract (using LeanProbe) and the
-  contributor guide (working on it).
+- [SKILL.md](src/lean_probe/skill/SKILL.md) — the full MCP contract (using
+  LeanProbe), installable into agents with `lean-probe install-skill`.
+- [AGENTS.md](AGENTS.md) — the contributor guide (working on this repo).
 - [BENCHMARKS.md](BENCHMARKS.md) — benchmark methodology and results.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup and checks.

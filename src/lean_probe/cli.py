@@ -1,8 +1,9 @@
 """Command-line interface for LeanProbe.
 
 Subcommands mirror the MCP tool set (``check``, ``check-target``, ``status``,
-``proof-state``) plus ``prepare`` (warm an env), the benchmark commands, and
-``mcp`` (run the stdio server). Benchmark code is imported lazily so a benchmark
+``proof-state``) plus ``prepare`` (warm an env), the benchmark commands,
+``install-skill`` (drop the LeanProbe skill into Claude Code/Codex), and ``mcp``
+(run the stdio server). Benchmark code is imported lazily so a benchmark
 dependency problem never affects checking.
 """
 
@@ -99,7 +100,41 @@ def build_parser() -> argparse.ArgumentParser:
     _add_benchmark_parsers(sub, common)
 
     sub.add_parser("mcp", help="Run the LeanProbe MCP stdio server")
+    _add_install_skill_parser(sub)
     return parser
+
+
+def _add_install_skill_parser(sub: Any) -> None:
+    from .skills import CLIENT_CHOICES
+
+    install = sub.add_parser(
+        "install-skill",
+        help="Install the LeanProbe usage skill into Claude Code and/or Codex",
+        description=(
+            "Copy the packaged LeanProbe skill into agent clients' skills directories "
+            "(~/.claude/skills, ~/.codex/skills) so they can load it as a real skill. "
+            "Ships with the wheel — no repo checkout needed."
+        ),
+    )
+    install.add_argument(
+        "--client",
+        choices=CLIENT_CHOICES,
+        default="all",
+        help="Which client to install into. 'all' (default) installs to every client whose "
+        "home dir exists; a named client is created if missing.",
+    )
+    install.add_argument(
+        "--skills-dir",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Install into an explicit skills root (repeatable). Overrides --client when given.",
+    )
+    install.add_argument("--dry-run", action="store_true", help="Show what would be written without writing")
+    install.add_argument(
+        "--print", dest="print_skill", action="store_true", help="Print the SKILL.md to stdout and exit"
+    )
+    install.add_argument("--home", default="", help=argparse.SUPPRESS)  # override $HOME (testing)
 
 
 def _add_benchmark_parsers(sub: Any, common: argparse.ArgumentParser) -> None:
@@ -208,6 +243,37 @@ def _run_benchmark_command(args: argparse.Namespace) -> int:
     return 0 if payload.get("success") else 1
 
 
+def _run_install_skill(args: argparse.Namespace) -> int:
+    from .skills import SKILL_NAME, discover_targets, install_skill, read_skill_text
+
+    if args.print_skill:
+        sys.stdout.write(read_skill_text())
+        return 0
+
+    targets = discover_targets(
+        clients=[args.client],
+        skills_dirs=args.skills_dir or None,
+        home=args.home or None,
+    )
+    if not targets:
+        print(
+            "No Claude Code or Codex client directory found "
+            "(looked for ~/.claude and ~/.codex). Pass --client claude|codex to create one, "
+            "or --skills-dir PATH to install elsewhere.",
+            file=sys.stderr,
+        )
+        return 1
+
+    results = install_skill(targets, dry_run=args.dry_run)
+    prefix = "[dry-run] " if args.dry_run else ""
+    print(f"{prefix}LeanProbe skill '{SKILL_NAME}':")
+    cwidth = max(len(r.target.client) for r in results)
+    awidth = max(len(r.action) for r in results)
+    for result in results:
+        print(f"  {result.target.client:<{cwidth}}  {result.action:<{awidth}}  {result.target.skill_file}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -224,6 +290,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command in {"benchmark", "benchmark-suite", "benchmark-file"}:
         return _run_benchmark_command(args)
+
+    if args.command == "install-skill":
+        return _run_install_skill(args)
 
     probe = _probe_from_args(args)
     try:

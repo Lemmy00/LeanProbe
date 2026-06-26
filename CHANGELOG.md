@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 - 2026-06-26
+
+- Split the agent-facing contract out of `AGENTS.md` into a real, installable
+  **skill** at `src/lean_probe/skill/SKILL.md` (YAML frontmatter + the MCP tool
+  contract). `AGENTS.md` now holds the contributor guide and points to it.
+- New `lean-probe install-skill` command drops the skill into agent clients'
+  skills directories — `~/.claude/skills` and `~/.codex/skills` use the same
+  `skills/<name>/SKILL.md` layout. By default it installs to every client whose
+  home dir exists ("both if both"); `--client claude|codex` forces one (creating
+  dirs), `--skills-dir PATH` targets an explicit root, and `--dry-run`/`--print`
+  preview. The skill ships inside the wheel, so `pip install lean-probe &&
+  lean-probe install-skill` works with no repo checkout.
+- The README links to the skill as the single source of truth, and the MCP server
+  advertises a condensed version of it in its `instructions` field; a test keeps the
+  skill's tool table in sync with `TOOL_NAMES`.
+
 ## 0.3.1 - 2026-06-17
 
 - The MCP server is now part of the base install: `mcp` moved from the `[mcp]`

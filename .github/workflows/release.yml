@@ -22,5 +22,17 @@ jobs:
           python -m pip install -U pip build twine
           python -m build
           python -m twine check dist/*
+      - name: Assert the bundled skill shipped
+        run: |
+          python - <<'PY'
+          import glob, sys, tarfile, zipfile
+          need = "lean_probe/skill/SKILL.md"
+          whl = glob.glob("dist/*.whl")[0]
+          assert need in zipfile.ZipFile(whl).namelist(), f"{need} missing from {whl}"
+          sdist = glob.glob("dist/*.tar.gz")[0]
+          with tarfile.open(sdist) as tf:
+              assert any(n.endswith("src/" + need) for n in tf.getnames()), f"{need} missing from {sdist}"
+          print("OK: skill bundled in", whl, "and", sdist)
+          PY
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

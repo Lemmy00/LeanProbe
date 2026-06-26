@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lean-probe"
-version = "0.3.1"
+version = "0.4.0"
 description = "Fast Lean 4 proof feedback for agents, powered by LeanInteract."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -46,7 +46,7 @@ Source = "https://github.com/Lemmy00/LeanProbe"
 where = ["src"]
 
 [tool.setuptools.package-data]
-lean_probe = ["py.typed"]
+lean_probe = ["py.typed", "skill/SKILL.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

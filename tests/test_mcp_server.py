@@ -179,7 +179,8 @@ def test_shutdown_handler_registration_is_repeatable(monkeypatch):
     assert len(signals) == 4
 
 
-def test_agent_tool_table_matches_public_mcp_names():
-    agent_md = (Path(__file__).resolve().parents[1] / "AGENTS.md").read_text(encoding="utf-8")
-    names = re.findall(r"\| `(lean_[a-z_]+)` \|", agent_md)
+def test_skill_tool_table_matches_public_mcp_names():
+    from lean_probe.skills import read_skill_text
+
+    names = re.findall(r"\| `(lean_[a-z_]+)` \|", read_skill_text())
     assert names == TOOL_NAMES
