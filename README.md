@@ -1,6 +1,6 @@
 # LeanProbe
 
-[![PyPI](https://img.shields.io/pypi/v/lean-probe.svg)](https://pypi.org/project/lean-probe/)
+[![PyPI](https://img.shields.io/pypi/v/lean-probe.svg?cacheSeconds=3600)](https://pypi.org/project/lean-probe/)
 
 Fast Lean 4 proof feedback for AI agents — an MCP server, CLI, and Python API.
 
